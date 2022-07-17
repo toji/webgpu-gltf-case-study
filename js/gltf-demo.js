@@ -4,7 +4,7 @@
 import { TinyWebGpuDemo } from './tiny-webgpu-demo.js'
 import { TinyGltfWebGpu } from './tiny-gltf.js'
 
-const GltfRootDir = '../glTF-Sample-Models/2.0';
+const GltfRootDir = './glTF-Sample-Models/2.0';
 
 const GltfModels = {
   antique_camera: `${GltfRootDir}/AntiqueCamera/glTF/AntiqueCamera.gltf`,
@@ -12,7 +12,7 @@ const GltfModels = {
   corset: `${GltfRootDir}/Corset/glTF-Binary/Corset.glb`,
   damaged_helmet: `${GltfRootDir}/DamagedHelmet/glTF-Binary/DamagedHelmet.glb`,
   flight_helmet: `${GltfRootDir}/FlightHelmet/glTF/FlightHelmet.gltf`,
-  sponza: `../sponza-optimized/Sponza.gltf`,
+  sponza: `./sponza-optimized/Sponza.gltf`,
 };
 
 // Runs the basic render loop, model switching, and camera handling.
