@@ -22,18 +22,18 @@ title: WebGPU glTF Renderer Case Study
 email: bajones@google.com
 description: >- # this means to ignore newlines until "baseurl:"
   A walkthrough of building a basic, efficient glTF renderer with WebGPU.
-baseurl: "" # the subpath of your site, e.g. /blog
+baseurl: "/" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: tojiro
 github_username:  toji
 
 # Build settings
-theme: bulma-clean-theme
+remote_theme: chrisrhymes/bulma-clean-theme
 plugins:
   - jekyll-remote-theme
 
 include:
-  - samples/
+  - samples
 
 # Exclude from processing.
 # The following items will not be processed, by default.
