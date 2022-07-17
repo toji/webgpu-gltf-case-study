@@ -4,6 +4,12 @@ This is a variant of the [Sponza scene](https://github.com/KhronosGroup/glTF-Sam
 
 This version, however, has been hand tweaked in Blender to optimize it for file size and instancing capabilities. Whereas the model from the Khronos repo merges all geometry using a given material into a single big buffer, this version has manually broken those meshes apart and replaced any repeating elements (columns, banners, flagpoles, etc.) with [linked duplicates](https://docs.blender.org/manual/en/latest/scene_layout/object/editing/duplicate_linked.html) in Blender. This allows the exported file to reference the same mesh from multiple nodes, which in turn both reduces the amount of geometry that needs to be stored and, for renderers that support it, enabled repeated elements in the scene to be rendered via instancing.
 
+Model size (.gltf + .bin only)
+ - Khronos samples version: **9.24MB**
+ - This version: **6.66MB**
+
+No textures have been edited.
+
 It's not quite a pixel perfect match for the original scene, largely due to not inverting certain elements because I didn't want to force double sided materials. But you'll be hard-pressed to notice any visual differences unless you're actively switching between the original and this one.
 
 # Original model's README

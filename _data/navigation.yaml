@@ -1,0 +1,14 @@
+- name: Live Samples
+  dropdown:
+    - name: 01 - Naive Renderer
+      link: samples/01-naive-renderer.html
+    - name: 02 - Buffer Layouts
+      link: samples/02-buffer-layouts.html
+    - name: 03 - Pipeline Caching
+      link: samples/03-pipeline-caching.html
+    - name: 04 - Instancing
+      link: samples/04-instancing.html
+    - name: 05 - Materials
+      link: samples/05-materials.html
+- name: GitHub
+  link: https://github.com/toji/webgpu-gltf-case-study

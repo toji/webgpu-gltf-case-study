@@ -1,7 +1,7 @@
 // This file contains the necessary structure for a minimalistic WebGPU demo app.
 // It uses dat.gui to offer a basic options panel and stats.js to display performance.
 
-import { vec3, mat4 } from '../node_modules/gl-matrix/esm/index.js';
+import { vec3, mat4 } from 'https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js';
 
 import 'https://cdn.jsdelivr.net/npm/tweakpane@3.1.0/dist/tweakpane.min.js';
 

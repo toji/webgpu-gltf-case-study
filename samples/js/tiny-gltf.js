@@ -5,8 +5,8 @@
  * It should generally not be used outside of simple tutorials or examples.
  */
 
-import { WebGPUMipmapGenerator } from '../node_modules/web-texture-tool/src/webgpu-mipmap-generator.js';
-import { mat4, vec3 } from '../node_modules/gl-matrix/esm/index.js';
+import { WebGPUMipmapGenerator } from './webgpu-mipmap-generator.js';
+import { mat4, vec3 } from 'https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js';
 
 const GLB_MAGIC = 0x46546C67;
 const CHUNK_TYPE = {

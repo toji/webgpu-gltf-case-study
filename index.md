@@ -1,5 +1,11 @@
-# Efficently rendering glTF models
-## A WebGPU case study
+---
+layout: page
+title: Efficently rendering glTF models
+subtitle: A WebGPU Case Study
+menubar_toc: true
+---
+
+## Introduction
 
 The WebGPU API is designed to make communicating between your code (ie: JavaScript in a browser) and the GPU more efficient. It builds on top of modern, fast native APIs such as Vulkan, Metal, or Direct3D 12, and as a result surfaces many of the same patterns for interacting with the GPU that those APIs established. One of the primary patterns that are seen in these APIs to achive this efficiency is defining the resources and state needed for rendering early on in large atomic bundles which can be validated once and creation time. This allows those same resources and state to be set quickly when it comes time to render with minimal overhead.
 
@@ -24,7 +30,11 @@ If you haven't done any WebGPU development before, these are some great resource
  - [WebGPU — All of the cores, none of the canvas](https://surma.dev/things/webgpu/) - A WebGPU introduction focused on compute
  - The [WebGPU](https://gpuweb.github.io/gpuweb/) and [WGSL](https://gpuweb.github.io/gpuweb/wgsl/) specs - Dense and not fun to read, but a good reference
 
-## A brief primer on glTF meshes
+## Part 1: A Naive Renderer
+
+Let's start by looking at what it takes to do the most straighforward "get triangles on the screen" renderer we can for a glTF model.
+
+### A brief primer on glTF meshes
 
 glTF is a popular format for delivering and loading runtime 3D assets, especially because it was designed to work well with web-friendly concepts like JSON and ArrayBuffers. As mentioned earlier, it was also designed with any eye towards being easy to display with WebGL (Or OpenGL ES), using enum values from that API to encode certain peices of state. It's absolutely possible to load glTF assets and display them efficiently with WebGPU, but this slight bias towards the older API means that the data as represented in the file sometimes needs to be transformed to fit the expected structure.
 
@@ -47,14 +57,14 @@ A perfect example of this is how glTF encodes vertex buffer data. glTF files def
 The attributes are indexes into an array of what glTF calls "Accessors", which in turn point into an array of "Buffer Views" that describes a range of a larger buffer and how the data is laid out within it:
 
 ```json
-"accessors": [{          // "POSITION" attribute
+"accessors": [{          // POSITION attribute
   "bufferView": 0,
   "byteOffset": 0,
   "type": "VEC3",
   "componentType": 5126, // gl.FLOAT
   "normalized": false,
   "count": 8,
-}, {                     // "TEXCOORD_0" attribute
+}, {                     // TEXCOORD_0 attribute
   "bufferView": 1,
   "byteOffset": 0,
   "type": "VEC2",
@@ -122,9 +132,8 @@ function drawGLTFMesh(gltf, node) {
 
 That code snippet is far from optimal, but the point is to show how the glTF data structure maps to WebGL geometry. And as you can see it's relatively straightforward!
 
-<details>
-  <summary>Click here if you want to get pedantic about WebGL</summary>
-  <br/>
+<details markdown=block>
+  <summary markdown=span><b>Click here if you want to get pedantic about WebGL</b></summary>
   Okay, yes. The code above has a lot of issues but that's not the point of this article! Since you've dug into this section, though, here's some things the above snippet should be doing instead:
 
    - Attribute locations should be looked up ahead of time and cached, definitely not queried every time we draw!
@@ -244,8 +253,8 @@ function setupPrimitive(gltf, primitive) {
 
 I'm going to glaze over the shader returned by `getShaderModule()` because it's not particularly important at this point. All we care about is getting the geometry on screen, so the shader can simply consume the vertex attributes, apply the appropriate transform, and output white triangles. (I gave it some really simple lighting in the live samples so you could see the shape of the geometry better.)
 
-<details>
-  <summary><b>Click here if you want to see the shader code anyway</b></summary>
+<details markdown=block>
+  <summary markdown=span><b>Click here if you want to see the shader code anyway</b></summary>
 
 ```js
 function getShaderModule() {
@@ -405,7 +414,7 @@ Also, this approach will probably be fine for individual models on at least mode
 
 So, what are some techniques that we can use to improve on this first pass?
 
-## Improving buffer bindings.
+## Part 2: Improving buffer bindings.
 
 ### Handling large attribute offsets
 
@@ -637,8 +646,8 @@ function setupPrimitive(gltf, primitive) {
 
 And fortunately for us, this change doesn't require any changes to the render loop. We already did everything necessary in the last step.
 
-<details>
-  <summary><b>Click here to get pedantic about buffer grouping</b></summary>
+<details markdown=block>
+  <summary markdown=span><b>Click here to get pedantic about buffer grouping</b></summary>
   There's an edge case that the above code isn't handling well. Specifically, there's a risk that if a file is mixing both interleaved vertex data AND non-interleaved vertex data that shares a buffer then we may end up not properly identifying the interleaved data depending on order we process the attributes in, and bind the vertex buffers more times than is strictly necessary.
 
   In practice, though, this isn't really an issue. Tools which produce glTF files tend to stick with a single vertex layout pattern for the entire file, so while you may end up seeing non-interleaved shader buffers in one file and interleaved shared buffers in another, it's unlikely that you'll get both in a single file. And if you do it's probably a rare enough edge case that you don't need to spend much time trying to optimize it. The above code will still allow it to render correctly regardless.
@@ -654,7 +663,7 @@ You may be picking up on a pattern at this point that the setup code is getting 
 
 So now we've reduced the amount of times we need to call `setVertexBuffer()` to a minimum, which is great! But ultimately that's a pretty minor performance concern compared to the elephant in the room...
 
-## There's too many pipelines!
+### There's too many pipelines!
 
 It's likely that even with a cursory look at the code above you can start to guess at one of the biggest efficiency issues it faces: _It creates a new pipeline for every single primitive_. That means that if your scene is comprised of 500 glTF `primitives`, even if they all share the same vertex layout, you will still end up with 500 `GPURenderPipelines` to switch between.
 
@@ -668,8 +677,8 @@ To start, let's take a closer look at what a `GPURenderPipeline` contains, and h
 
 You can see what's in the pipeline by looking at the [WebGPU spec's `GPURenderPipelineDescriptor` definition](https://gpuweb.github.io/gpuweb/#dictdef-gpurenderpipelinedescriptor) but given that it's a heavily nested structure it takes a bit of navigation to see the full thing.
 
-<details>
-  <summary><b>Click here to see an example of the full GPURenderPipelineDescriptor structure</b></summary>
+<details markdown=block>
+  <summary markdown=span><b>Click here to see an example of the full GPURenderPipelineDescriptor structure</b></summary>
 
 ```js
 {
@@ -763,7 +772,7 @@ Finally, the remainder of the values are likely to come from your **material**. 
 
 It's worth mentioning that the code of the vertex and fragment shader modules sit in a strange place where they can be influenced by all three of those aspects, which can make it seem like another vector for increasing the number of pipelines in use, but you can get away with suprisingly few variants of your shader code itself by relying more on branching and looping, something that GPUs have gotten quite good at over the years. Again, we'll talk about this more below.
 
-## Identifying duplicate pipelines
+## Part 3: Identifying duplicate pipelines
 
 Up to this point the render pipelines created by our code have only really taken into account the vertex data layout (buffer layout and primitive topology). So that's where we'll start when looking for duplicate pipelines.
 
@@ -823,7 +832,7 @@ Nothing about the rest of the code should be too surprising. It's about as simpl
 
 And now we've significantly reduced the number of pipelines that need to be created! In fact, if you make the above changes to the previous sample page you'll start seeing that most models you load only need a single pipeline now! That'll change when we start taking materials into account, and if we were handling things like animation it could add additional pipeline variations into the mix. But it highlights the fact that although glTF technically doesn't give you many guarantees about vertex layout, the reality is that within a single file the layout is usually going to be identical or extremely similar.
 
-## Sorting attributes and buffers
+### Sorting attributes and buffers
 
 So we found a bunch of geometry that can share the same pipeline, yay! We're done here, right?
 
@@ -923,7 +932,7 @@ function setupPrimitive(gltf, primitive) {
 
 It should be noted that the previous work that we did to normalize attribute offsets *also* helps here! By normalizing the attribute offsets we create more opportunities for duplicate pipelines to be identified.
 
-## Rethinking the render loop
+### Rethinking the render loop
 
 Now we have most or all of our geometry using a single pipeline, but if we continue using the same render loop from above that actually doesn't help us much, because we're still setting the pipeline for every primitive we draw. If you're lucky the fact that you're simply setting same pipeline over and over again might be recognized by the driver and optimized, but WebGPU implementations have zero obligation to identify duplicate state changes for you. It will always be a far better strategy to optimize your own code to reduce unnecessary work than hope that some other part of the stack will magically make things faster for you.
 
@@ -1063,7 +1072,7 @@ For example, look at the "buggy" model on this page. In the prevous sample, we w
 
 A tradeoff is that we're calling `setBindGroup()` more now (237 times vs 191 in the previous sample), so we've traded off significantly less `setPipeline()` calls for more `setBindGroup()` calls. But that's OK! `setBindGroup()` is generally a cheaper operation AND we can use some additional tricks to reduce those calls too.
 
-## Instancing
+## Part 4: Instancing
 
 Now, I'm sure that at least some readers were shouting at their screens at the end of the last section that the code wasn't doing *real* instancing. And they'd be right! Let's fix that.
 
@@ -1358,7 +1367,7 @@ Also, if some instanced meshes in your scene have additional per-instance data t
 
 Remember what I said at the beginning of this doc: There's rarely a "perfect" solution for any given problem, only a solution that works well with the tradeoffs your app is willing to make.
 
-## glTF Material overview
+## Part 5.0: glTF Material overview
 
 Up till this point we've been ignoring materials for the sake of simplicity, but now that we've got some of the quirks of rendering the geometry figured out, it's a good time to start looking at how to incorporate materials into our rendering.
 
@@ -1497,7 +1506,7 @@ Here's a relatively complete example:
 }],
 ```
 
-## Applying material properties
+## Part 5.1: Applying material properties
 
 Now that we've got a good idea of what makes up a glTF material we need to start applying those properties to our rendering. This needs to happens in accross several parts of the code.
 
@@ -1572,8 +1581,8 @@ You may notice that this doesn't account for glTF's `"MASK"` blend mode, but we'
 
 Otherwise, that's the entirity of the changes we need to make to the pipelines to support materials! The rest of the material values will be communicated either via bind groups or shader changes.
 
-<details>
-  <summary><b>A note on transparent surface ordering</b></summary>
+<details markdown=block>
+  <summary markdown=span><b>A note on transparent surface ordering</b></summary>
   One you start rendering models with alpha blending, you're bound to start seeing some artifacts due to the order the geometry is rendered in. In short: If transparent geometry is rendered before something that should appear behind it, depth testing may cull away that geometry leaving a hole when you look at it through the transparent surface.
 
   Traditionally the way to handle this is to render all opaque surfaces first, then render all transparent surfaces sorted back-to-front from the camera's point of view. This still isn't perfect, though, as you could have very large transparent meshes that don't sort trivailly.
@@ -1679,7 +1688,7 @@ const transparentBlackTexture = createSolidColorTexture(0, 0, 0, 0);
 const defaultNormalTexture = createSolidColorTexture(0.5, 0.5, 1, 1);
 ```
 
-### Associating materials with primitives
+### Part 5.2: Associating materials with primitives
 
 After that's been done make sure to associate the primitive with the bind group we just created during the primitive setup. We can start by simply adding the material properties to the primitve GPU data we're already tracking.
 
@@ -1731,7 +1740,7 @@ function renderGltf(renderPass) {
 
 And with that we're now passing all the information we need to begin rendering with materials! But if you were to run the code at this point you'd find that all of those changes have yet to make any difference to the rendered output because we've got one significant change left to make: Updating the shader.
 
-## Using materials in the shader
+## Part 5.2: Using materials in the shader
 
 Writing shaders that efficiently render PBR materials like those used by glTF is, to put it mildly, a large topic. You can find volumes of writing from talented developers who have spent far more time researching the topic than I have with you favorite search engine, so I'm not even going to try to capture the full scope of it here.
 
@@ -1803,8 +1812,8 @@ const ShaderLocations = {
 };
 ```
 
-<details>
-  <summary><b>A note on glTF texture coordinates</b></summary>
+<details markdown=block>
+  <summary markdown=span><b>A note on glTF texture coordinates</b></summary>
   glTF supports using multiple different sets of texture coordinates for a single primitive, denoted by the number at the end of the attribute name. `TEXCOORD_1`, `TEXCOORD_4`, etc. These will then correspond with the optional `texCoord` value specified in the [material's texture references](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-textureinfo).
 
   This can be useful for certain types of effects, but in my experience it's fairly rare that models actually make use of multiple texture coordinates in a meaningful way. As such, this document will be ignoring them for simlicity, but be aware that it's something that needs to be considerd if you are trying to make a strictly compliant glTF renderer.
@@ -2060,7 +2069,7 @@ Even when using a shader variant that doesn't use a given material value, howeve
 
 Times where you may want to consider creating bind group variants are when a given shader requires large bind group values that are not easily faked, such as skinning data.
 
-## One last render loop optimization
+## Part 5.3: One last render loop optimization
 
 At this point we've taken the material rendering as far as this document is going to take it, but there's still one more thing we can look at before wrapping up.
 
