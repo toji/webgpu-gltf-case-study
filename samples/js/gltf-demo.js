@@ -3,6 +3,7 @@
 
 import { TinyWebGpuDemo } from './tiny-webgpu-demo.js'
 import { TinyGltfWebGpu } from './tiny-gltf.js'
+import { QueryArgs } from './query-args.js'
 
 const GltfRootDir = './glTF-Sample-Models/2.0';
 
@@ -18,12 +19,21 @@ const GltfModels = {
 // Runs the basic render loop, model switching, and camera handling.
 export class GltfDemo extends TinyWebGpuDemo {
   clearColor = {r: 0.0, g: 0.0, b: 0.2, a: 1.0};
-  model = GltfModels['antique_camera'];
+
   rendererClass = null;
   gltfRenderer = null;
 
-  constructor(rendererClass) {
+  constructor(rendererClass, startup_model) {
     super();
+
+    // Allow the startup model to be overriden by a query arg.
+    startup_model = QueryArgs.getString('model', startup_model);
+    if (startup_model in GltfModels) {
+      this.model = GltfModels[startup_model];
+    } else {
+      this.model = GltfModels['antique_camera'];
+    }
+
     this.rendererClass = rendererClass;
 
     this.pane.addBlade({

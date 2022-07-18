@@ -462,7 +462,9 @@ For example, assume you have the following accessors:
 
 You can see that both of these point at the same `bufferView`, but while the first has a `byteOffset` of 0 the second points to a location 5760 byte in! This is because whatever tool produced this file made the decision to place all the attributes in a single buffer, one after the other like this:
 
-`Position|Position|Position|Position...|Normal|Normal|Normal|v...`
+```
+Position|Position|Position|...|Normal|Normal|Normal|...
+```
 
 That's a perfectly valid thing to do! And were we writing a WebGL renderer it wouldn't cause us any problems, because `gl.vertexAttribPointer()` doesn't place any limits on the attribute offsets.
 
@@ -570,7 +572,9 @@ There's even more than we can improve regarding our buffer binding, though! One 
 
 The two `accessors` that both point at a different `byteOffset` into the same `bufferView`, like the previous example, but this time the offsets between them fit within the `byteStride`. This means that the vertex data in the buffer is laid out like so:
 
-`Position|TexCoord|Position|TexCoord|Position|TexCoord...`
+```
+Position|TexCoord|Position|TexCoord|Position|TexCoord...
+```
 
 This is referred to as "interleaved" vertex data, and just like with the previous section it's a valid choice that the tools which produced the glTF file can make about how to lay out their data.
 
@@ -1798,7 +1802,7 @@ fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
 After making that change if we view models that use the `baseColorFactor`, such as the "buggy" model, you'll start seeing those colors come through in the rendering.
 
 [![Buggy, now in color.](/assets/images/buggy-color.jpg)
-Click to launch **Sample 05 - Materials**](samples/05-materials.html)
+Click to launch **Sample 05 - Materials**](samples/05-materials.html?model=buggy)
 
 Worth noting that a lot of models _don't_ use `baseColorFactor`, relying instead exclusively on textures for their coloring. But since our code in `setupMaterial()` provided a default base color of white when the base color is missing every model without a `baseColorFactor` continues to render exactly like it did before.
 
@@ -2060,11 +2064,11 @@ let code = wgsl`
 This change allows the plants in the "sponza" scene to render correctly, since they use `"MASK"` mode to hide the excess geometry around the leaves and flowers.
 
 Before implementing `alphaMode: "MASK"`
-[![Sponza's plants without alpha discard](/assets/images/no-alpha-mask.jpg)](samples/05-materials.html)
+[![Sponza's plants without alpha discard](/assets/images/no-alpha-mask.jpg)](samples/05-materials.html?model=sponza)
 
 After implementing `alphaMode: "MASK"`
 [![Sponza's plants with alpha discard](/assets/images/alpha-mask.jpg)
-Click to launch **Sample 05 - Materials**](samples/05-materials.html)
+Click to launch **Sample 05 - Materials**](samples/05-materials.html?model=sponza)
 
 ### Don't go overboard with shader variants!
 
