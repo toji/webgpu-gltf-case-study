@@ -1354,7 +1354,7 @@ function renderGltf(renderPass) {
 
 By doing this, we eliminate a `setBindGroup()` call for every primitive we draw in favor of simply passing in another argument to `draw()`, which is definitely a win from the perspective of JavaScript overhead for our rendering! (The 0 in between the `instanceCount` and `firstInstance` args is the `baseVertex`, which can be useful if you're packing all the geometry for your meshes into a larger buffers, but which we won't be using in these samples.)
 
-(Fun fact: This trick can't be done in WebGL or WebGL 2, as it doesn't have an equivalent to the `firstInstance` argument. It's in development for WebGL 2 as the [WEBGL_draw_instanced_base_vertex_base_instance](https://www.khronos.org/registry/webgl/extensions/WEBGL_draw_instanced_base_vertex_base_instance/) extension, though!)
+(Fun fact: This trick can't be done in WebGL or WebGL 2, as it doesn't have an equivalent to the `firstInstance` argument. It's in development as a [WebGL 2 extension](https://www.khronos.org/registry/webgl/extensions/WEBGL_draw_instanced_base_vertex_base_instance/), though!)
 
 [![Sample 4 screenshot](/assets/images/sample-04.jpg)
 Click to launch **Sample 04 - Instancing**](samples/04-instancing.html)

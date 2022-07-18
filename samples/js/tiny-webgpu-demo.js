@@ -30,20 +30,6 @@ injectedStyle.innerText = `
     touch-action: none;
   }
 
-  header {
-    position: absolute;
-    z-index: 1;
-    text-align: left;
-    font-weight: bold;
-    color: white;
-    margin: 1em;
-  }
-
-  header a {
-    display: block;
-    font-size: 0.9em;
-  }
-
   .error {
     position: absolute;
     z-index: 2;
@@ -56,10 +42,7 @@ injectedStyle.innerText = `
   .tp-dfwv {
     z-index: 3;
     margin-top: 4em;
-  }
-
-  .tp-lblv_v {
-    width: 140px !important;
+    width: 290px !important;
   }
 
   .nav {
@@ -86,6 +69,8 @@ injectedStyle.innerText = `
   }
 `;
 document.head.appendChild(injectedStyle);
+
+const sourceOrigin = 'https://github.com/toji';
 
 const FRAME_BUFFER_SIZE = Float32Array.BYTES_PER_ELEMENT * 36;
 
@@ -117,7 +102,15 @@ export class TinyWebGpuDemo {
     }
     this.context = this.canvas.getContext('webgpu');
 
-    this.pane = new Tweakpane.Pane();
+    this.pane = new Tweakpane.Pane({
+      title: document.title.split('|')[0],
+    });
+
+    const viewSrcBtn = this.pane.addButton({title: 'View Source'});
+    viewSrcBtn.on('click', () => {
+      let srcUrl = sourceOrigin + window.location.pathname;
+      window.location.href = srcUrl;
+    });
 
     this.camera = new OrbitCamera(this.canvas);
 
