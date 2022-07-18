@@ -1387,7 +1387,7 @@ Materials in glTF are generally comprised of four different glTF properties: `im
 
 There's a bit of terminology confusion here, because glTF `images` map most closely to WebGPU Textures, but otherwise it's a pretty straightforward thing to load them. Unless you're using extendions, glTF defines that all images come in the form of a JPEG or PNG file, either defined by a relative URI or encoded in one of the binary buffers. That's great news for us, because browsers happen to be really good at loading image files! We just have to push the contents of the images that the browser loads for us into a texture.
 
-I've written an entirely separate document about best practices for [creating WebGPU textures from image elements](../img-textures.md). It even has a section _specifically about loading images from a glTF file!_ So really, just go read that. It won't take long. Because the code is short, however, I'll stick it here for reference.
+I've written an entirely separate document about best practices for [creating WebGPU textures from image elements](https://toji.github.io/webgpu-best-practices/img-textures.html). It even has a section _specifically about loading images from a glTF file!_ So really, just go read that. It won't take long. Because the code is short, however, I'll stick it here for reference.
 
 ```js
 async function createTextureForGltfImage(gltf, image) {
