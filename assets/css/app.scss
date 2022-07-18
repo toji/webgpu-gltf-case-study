@@ -1,0 +1,35 @@
+---
+---
+
+@media screen and (max-width: 768px) {
+  .contents {
+    /*
+      For now, simply hide the contents when the page is too skinny
+      Otherwise it takes up a HUGE amount of space at the top.
+    */
+    display: none;
+  }
+
+  // Could to a click-to-expand content menu if we can make the header focusable.
+  /*.contents .menu-list {
+    display: none;
+  }
+
+  .contents .menu-label {
+    margin-block-end: 0px;
+  }
+  .contents:hover .menu-label {
+    margin-block-end: 1em;
+  }
+
+  .contents .menu-label:before {
+    content: '\2630 \a0';
+  }
+
+  .contents:hover .menu-list {
+    display: block;
+  }*/
+}
+
+// Import Main CSS file from theme
+@import "main";
