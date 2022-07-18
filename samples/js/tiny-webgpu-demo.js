@@ -47,7 +47,7 @@ injectedStyle.innerText = `
   .error {
     position: absolute;
     z-index: 2;
-    inset: 3em;
+    inset: 5em 3em;
     margin: 0;
     padding: 0;
     color: #FF8888;
@@ -68,6 +68,7 @@ injectedStyle.innerText = `
 
   .section {
     flex: 1 1 auto;
+    background-color: #222222;
   }
 
   .section, .section div {
@@ -115,12 +116,10 @@ export class TinyWebGpuDemo {
       document.body.appendChild(this.canvas);
     }
     this.context = this.canvas.getContext('webgpu');
+
     this.pane = new Tweakpane.Pane();
 
     this.camera = new OrbitCamera(this.canvas);
-
-    // Attach the demo elements to the DOM
-
 
     this.resizeObserver = new ResizeObserverHelper(this.canvas, (width, height) => {
       if (width == 0 || height == 0) { return; }

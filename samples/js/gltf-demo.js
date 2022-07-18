@@ -146,7 +146,7 @@ function resetFrameStats() {
   gpuFrameStats.instanceCount = 0;
 }
 
-if (TRACK_RESOURCE_USAGE) {
+if (TRACK_RESOURCE_USAGE && 'GPUDevice' in window) {
   const origCreateRenderPipeline = GPUDevice.prototype.createRenderPipeline;
   GPUDevice.prototype.createRenderPipeline = function(...args) {
     gpuResourceStats.pipelineCount++;
