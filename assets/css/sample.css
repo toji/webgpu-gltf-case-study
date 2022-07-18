@@ -1,0 +1,37 @@
+html, body, .section, .section div {
+  height: 100%;
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-flow: column;
+}
+
+iframe {
+  position: relative;
+  z-index: 0;
+  height: 100%;
+  width: 100%;
+  inset: 0;
+  margin: 0;
+  touch-action: none;
+}
+
+.nav {
+  flex: 0 1 auto;
+}
+
+.section {
+  flex: 1 1 auto;
+  background-color: #222222;
+}
+
+.section .container {
+  max-width: none !important;
+}
+
+.footer {
+  display: none;
+}

@@ -15,13 +15,12 @@ injectedStyle.innerText = `
   }
 
   body {
-    display: flex;
-    flex-flow: column;
     height: 100%;
+    background-color: #222222;
   }
 
   canvas {
-    position: relative;
+    position: absolute;
     z-index: 0;
     height: 100%;
     width: 100%;
@@ -41,31 +40,7 @@ injectedStyle.innerText = `
 
   .tp-dfwv {
     z-index: 3;
-    margin-top: 4em;
     width: 290px !important;
-  }
-
-  .nav {
-    flex: 0 1 auto;
-  }
-
-  .section {
-    flex: 1 1 auto;
-    background-color: #222222;
-  }
-
-  .section, .section div {
-    height: 100%;
-    padding: 0;
-    margin: 0;
-  }
-
-  .section .container {
-    max-width: none !important;
-  }
-
-  .footer {
-    display: none;
   }
 `;
 document.head.appendChild(injectedStyle);
@@ -110,7 +85,7 @@ export class TinyWebGpuDemo {
     const viewSrcBtn = this.pane.addButton({title: 'View Source'});
     viewSrcBtn.on('click', () => {
       let srcUrl = sourceOrigin + window.location.pathname.replace(sourceRepo, sourceRepo + '/blob/main');
-      window.location.href = srcUrl;
+      window.open(srcUrl, '_blank');
     });
 
     this.camera = new OrbitCamera(this.canvas);

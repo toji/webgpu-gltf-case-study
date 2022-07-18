@@ -405,7 +405,7 @@ And that will get geometry on the screen! It's not a terrible place to start whe
 If you want to see the above approach in action, I've put together a sample page that does exactly that. It hides most of the boilerplate of initializing WebGPU, loading the glTF files, etc. and just focuses on the above methods, but you can see that using it we can load and render a variety of glTF models as simple untextured geometry. Even "larger" scenes like Sponza work!
 
 [![Sample 1 sceenshot](/assets/images/sample-01.jpg)
-Click to launch **Sample 01 - Naive Rendering**](samples/01-naive-renderer.html)
+Click to launch **Sample 01 - Naive Rendering**](01-naive-renderer.html)
 
 So... triangles on screen! Victory! Slap some materials on there and call it a day, right?
 
@@ -661,7 +661,7 @@ And fortunately for us, this change doesn't require any changes to the render lo
 You can see the combined changes from these two steps at work on the second sample page, which now loads every model in the list correctly.
 
 [![Sample 2 sceenshot](/assets/images/sample-02.jpg)
-Click to launch **Sample 02 - Buffer Layouts**](samples/02-buffer-layouts.html)
+Click to launch **Sample 02 - Buffer Layouts**](02-buffer-layouts.html)
 
 ### More work at load == faster drawing
 
@@ -1073,7 +1073,7 @@ function renderGltf(renderPass) {
 You can see that this isn't much less complex than the previous version, we're just looping through it in a different order. But that simple change in the order of operations has a big impact on how much work we're ultimately doing, which hopefully you can see in the third sample page:
 
 [![Sample 3 screenshot](/assets/images/sample-03.jpg)
-Click to launch **Sample 03 - Pipeline Caching**](samples/03-pipeline-caching.html)
+Click to launch **Sample 03 - Pipeline Caching**](03-pipeline-caching.html)
 
 For example, look at the "buggy" model on this page. In the prevous sample, we were calling `setPipeline()` 236 times every frame. With the changes described above we're now calling it once! And we're setting buffers less too, 444 times vs 708 in the previous sample.
 
@@ -1357,7 +1357,7 @@ By doing this, we eliminate a `setBindGroup()` call for every primitive we draw 
 (Fun fact: This trick can't be done in WebGL or WebGL 2, as it doesn't have an equivalent to the `firstInstance` argument. It's in development as a [WebGL 2 extension](https://www.khronos.org/registry/webgl/extensions/WEBGL_draw_instanced_base_vertex_base_instance/), though!)
 
 [![Sample 4 screenshot](/assets/images/sample-04.jpg)
-Click to launch **Sample 04 - Instancing**](samples/04-instancing.html)
+Click to launch **Sample 04 - Instancing**](04-instancing.html)
 
 If we take a look at our sample app with these new modifications, we can now see that for some models, such as the "flight_helmet", the benefit of these changes is modest: We go from 7 bind group sets to 2, but the number of draw calls is the same because there's no repeated meshes.
 
@@ -1802,7 +1802,7 @@ fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
 After making that change if we view models that use the `baseColorFactor`, such as the "buggy" model, you'll start seeing those colors come through in the rendering.
 
 [![Buggy, now in color.](/assets/images/buggy-color.jpg)
-Click to launch **Sample 05 - Materials**](samples/05-materials.html?model=buggy)
+Click to launch **Sample 05 - Materials**](05-materials.html?model=buggy)
 
 Worth noting that a lot of models _don't_ use `baseColorFactor`, relying instead exclusively on textures for their coloring. But since our code in `setupMaterial()` provided a default base color of white when the base color is missing every model without a `baseColorFactor` continues to render exactly like it did before.
 
@@ -1883,7 +1883,7 @@ fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
 And now we have textured models as well!
 
 [![Sample 5 screenshot](/assets/images/sample-05.jpg)
-Click to launch **Sample 05 - Materials**](samples/05-materials.html)
+Click to launch **Sample 05 - Materials**](05-materials.html)
 
 So we're basically done here, right?
 
@@ -2064,11 +2064,11 @@ let code = wgsl`
 This change allows the plants in the "sponza" scene to render correctly, since they use `"MASK"` mode to hide the excess geometry around the leaves and flowers.
 
 Before implementing `alphaMode: "MASK"`
-[![Sponza's plants without alpha discard](/assets/images/no-alpha-mask.jpg)](samples/05-materials.html?model=sponza)
+[![Sponza's plants without alpha discard](/assets/images/no-alpha-mask.jpg)](05-materials.html?model=sponza)
 
 After implementing `alphaMode: "MASK"`
 [![Sponza's plants with alpha discard](/assets/images/alpha-mask.jpg)
-Click to launch **Sample 05 - Materials**](samples/05-materials.html?model=sponza)
+Click to launch **Sample 05 - Materials**](05-materials.html?model=sponza)
 
 ### Don't go overboard with shader variants!
 
