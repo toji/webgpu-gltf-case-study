@@ -2234,3 +2234,7 @@ function gpuPrimitiveTopologyForMode(mode) {
   }
 }
 ```
+
+## About the author
+
+[Brandon Jones](https://twitter.com/tojiro) is a software engineer on the Google Chrome team and spec editor for WebGPU and WebXR.
