@@ -71,6 +71,7 @@ injectedStyle.innerText = `
 document.head.appendChild(injectedStyle);
 
 const sourceOrigin = 'https://github.com/toji';
+const sourceRepo = 'webgpu-gltf-case-study';
 
 const FRAME_BUFFER_SIZE = Float32Array.BYTES_PER_ELEMENT * 36;
 
@@ -108,7 +109,7 @@ export class TinyWebGpuDemo {
 
     const viewSrcBtn = this.pane.addButton({title: 'View Source'});
     viewSrcBtn.on('click', () => {
-      let srcUrl = sourceOrigin + window.location.pathname;
+      let srcUrl = sourceOrigin + window.location.pathname.replace(sourceRepo, sourceRepo + '/blob/main');
       window.location.href = srcUrl;
     });
 
