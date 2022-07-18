@@ -1,294 +1,290 @@
-<!doctype html>
+---
+layout: page
+title: 02 - Buffer Layouts
+hide_hero: true
+---
 
-<html>
-  <head>
-    <meta charset='utf-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1, user-scalable=no'>
-    <meta name='mobile-web-app-capable' content='yes'>
-    <meta name='apple-mobile-web-app-capable' content='yes'>
+<header>
+  02 - Buffer Layouts
+  <a href='https://github.com/toji/webgpu-gltf-case-study/blob/main/samples/02-buffer-layouts.html'>(View Source on GitHub)</a>
+</header>
+<canvas class='webgpu-canvas'></canvas>
+<script type="module">
+  import { GltfDemo } from './js/gltf-demo.js'
+  import { TinyGltfWebGpu } from './js/tiny-gltf.js'
 
-    <title>WebGPU glTF Case Study - 02</title>
-  </head>
-  <body>
-    <header>02: Buffer Layouts</header>
-    <script type="module">
-      import { GltfDemo } from './js/gltf-demo.js'
-      import { TinyGltfWebGpu } from './js/tiny-gltf.js'
+  // Shader locations and source are unchanged from the previous sample.
+  const ShaderLocations = {
+    POSITION: 0,
+    NORMAL: 1,
+  };
 
-      // Shader locations and source are unchanged from the previous sample.
-      const ShaderLocations = {
-        POSITION: 0,
-        NORMAL: 1,
-      };
+  class GltfRenderer {
+    static loadImageSlots = [];
 
-      class GltfRenderer {
-        static loadImageSlots = [];
+    nodeGpuData = new Map();
+    primitiveGpuData = new Map();
 
-        nodeGpuData = new Map();
-        primitiveGpuData = new Map();
+    constructor(demoApp, gltf) {
+      this.gltf = gltf;
+      this.app = demoApp;
+      this.device = demoApp.device;
 
-        constructor(demoApp, gltf) {
-          this.gltf = gltf;
-          this.app = demoApp;
-          this.device = demoApp.device;
+      this.nodeBindGroupLayout = this.device.createBindGroupLayout({
+        label: `glTF Node BindGroupLayout`,
+        entries: [{
+          binding: 0, // Node uniforms
+          visibility: GPUShaderStage.VERTEX,
+          buffer: {},
+        }],
+      });
 
-          this.nodeBindGroupLayout = this.device.createBindGroupLayout({
-            label: `glTF Node BindGroupLayout`,
-            entries: [{
-              binding: 0, // Node uniforms
-              visibility: GPUShaderStage.VERTEX,
-              buffer: {},
-            }],
-          });
+      this.gltfPipelineLayout = this.device.createPipelineLayout({
+        label: 'glTF Pipeline Layout',
+        bindGroupLayouts: [
+          this.app.frameBindGroupLayout,
+          this.nodeBindGroupLayout,
+        ]
+      });
 
-          this.gltfPipelineLayout = this.device.createPipelineLayout({
-            label: 'glTF Pipeline Layout',
-            bindGroupLayouts: [
-              this.app.frameBindGroupLayout,
-              this.nodeBindGroupLayout,
-            ]
-          });
-
-          for (const node of gltf.nodes) {
-            if ('mesh' in node) {
-              this.setupMeshNode(gltf, node);
-            }
-          }
-
-          for (const mesh of gltf.meshes) {
-            for (const primitive of mesh.primitives) {
-              this.setupPrimitive(gltf, primitive);
-            }
-          }
-        }
-
-        getShaderModule() {
-          if (!this.shaderModule) {
-            const code = `
-              struct Camera {
-                projection : mat4x4<f32>,
-                view : mat4x4<f32>,
-                position : vec3<f32>,
-                time : f32,
-              };
-              @group(0) @binding(0) var<uniform> camera : Camera;
-
-              @group(1) @binding(0) var<uniform> model : mat4x4<f32>;
-
-              struct VertexInput {
-                @location(${ShaderLocations.POSITION}) position : vec3<f32>,
-                @location(${ShaderLocations.NORMAL}) normal : vec3<f32>,
-              };
-
-              struct VertexOutput {
-                @builtin(position) position : vec4<f32>,
-                @location(0) normal : vec3<f32>,
-              };
-
-              @vertex
-              fn vertexMain(input : VertexInput) -> VertexOutput {
-                var output : VertexOutput;
-
-                output.position = camera.projection * camera.view * model * vec4(input.position, 1.0);
-                output.normal = normalize((camera.view * model * vec4(input.normal, 0.0)).xyz);
-
-                return output;
-              }
-
-              // Some hardcoded lighting
-              const lightDir = vec3(0.25, 0.5, 1.0);
-              const lightColor = vec3(1.0, 1.0, 1.0);
-              const ambientColor = vec3(0.1, 0.1, 0.1);
-
-              @fragment
-              fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
-                // An extremely simple directional lighting model, just to give our model some shape.
-                let N = normalize(input.normal);
-                let L = normalize(lightDir);
-                let NDotL = max(dot(N, L), 0.0);
-                let surfaceColor = ambientColor + NDotL;
-
-                return vec4(surfaceColor, 1.0);
-              }
-            `;
-
-            this.shaderModule = this.device.createShaderModule({
-              label: 'Simple glTF rendering shader module',
-              code,
-            });
-          }
-
-          return this.shaderModule;
-        }
-
-        setupMeshNode(gltf, node) {
-          const nodeUniformBuffer = this.device.createBuffer({
-            size: 16 * Float32Array.BYTES_PER_ELEMENT,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-          });
-          this.device.queue.writeBuffer(nodeUniformBuffer, 0, node.worldMatrix);
-
-          const bindGroup = this.device.createBindGroup({
-            label: `glTF Node BindGroup`,
-            layout: this.nodeBindGroupLayout,
-            entries: [{
-              binding: 0, // Node uniforms
-              resource: { buffer: nodeUniformBuffer },
-            }],
-          });
-
-          this.nodeGpuData.set(node, { bindGroup });
-        }
-
-        setupPrimitive(gltf, primitive) {
-          // Note that these are maps now!
-          const bufferLayout = new Map();
-          const gpuBuffers = new Map();
-          let drawCount = 0;
-
-          for (const [attribName, accessorIndex] of Object.entries(primitive.attributes)) {
-            const accessor = gltf.accessors[accessorIndex];
-            const bufferView = gltf.bufferViews[accessor.bufferView];
-
-            const shaderLocation = ShaderLocations[attribName];
-            if (shaderLocation === undefined) { continue; }
-
-            const offset = accessor.byteOffset;
-
-            let buffer = bufferLayout.get(accessor.bufferView);
-            let gpuBuffer;
-            // If the delta between attributes falls outside the bufferView's stated arrayStride,
-            // then the buffers should be considered separate.
-            let separate = buffer && (Math.abs(offset - buffer.attributes[0].offset) >= buffer.arrayStride);
-            // If we haven't seen this buffer before OR have decided that is should be separate
-            // because its offset is too large, create a new buffer entry for the pipeline's vertex
-            // layout.
-            if (!buffer || separate) {
-              buffer = {
-                arrayStride: bufferView.byteStride || TinyGltfWebGpu.packedArrayStrideForAccessor(accessor),
-                attributes: [],
-              };
-              // If the buffers are separate due to offset, don't use the bufferView index to track
-              // them. Use the attribName instead, which is guaranteed to be unique.
-              bufferLayout.set(separate ? attribName : accessor.bufferView, buffer);
-              // We're going to start tracking the gpuBuffers by the buffer layout now rather than
-              // the bufferView, since we might end up with multiple buffer layouts all
-              // pointing at the same bufferView.
-              gpuBuffers.set(buffer, {
-                buffer: gltf.gpuBuffers[accessor.bufferView],
-                offset
-              });
-            } else {
-              gpuBuffer = gpuBuffers.get(buffer);
-              // Track the minimum offset across all attributes that share a buffer.
-              gpuBuffer.offset = Math.min(gpuBuffer.offset, offset);
-            }
-
-            // Add the attribute to the buffer layout
-            buffer.attributes.push({
-              shaderLocation,
-              format: TinyGltfWebGpu.gpuFormatForAccessor(accessor),
-              offset,
-            });
-
-            drawCount = accessor.count;
-          }
-
-          // For each buffer, normalize the attribute offsets by subtracting the buffer offset from
-          // the attribute offsets.
-          for (const buffer of bufferLayout.values()) {
-            const gpuBuffer = gpuBuffers.get(buffer);
-            for (const attribute of buffer.attributes) {
-              attribute.offset -= gpuBuffer.offset;
-            }
-          }
-
-          const gpuPrimitive = {
-            // Moved the pipeline creation to a helper function to help keep these code
-            // snippets focused.
-            pipeline: this.getPipelineForPrimitive(primitive, bufferLayout.values()),
-            buffers: [...gpuBuffers.values()],
-            drawCount
-          };
-
-          // If the primitive has index data, store the index buffer, offset, type, count as well.
-          if ('indices' in primitive) {
-            const accessor = gltf.accessors[primitive.indices];
-            gpuPrimitive.indexBuffer = gltf.gpuBuffers[accessor.bufferView];
-            gpuPrimitive.indexOffset = accessor.byteOffset;
-            gpuPrimitive.indexType = TinyGltfWebGpu.gpuIndexFormatForComponentType(accessor.componentType);
-            gpuPrimitive.drawCount = accessor.count;
-          }
-
-          this.primitiveGpuData.set(primitive, gpuPrimitive);
-        }
-
-        // Moved the pipeline creation out to a helper function for clarity. This will also help in
-        // subsequent samples.
-        getPipelineForPrimitive(primitive, bufferLayout) {
-          // Create a render pipeline that is compatible with the vertex buffer layout for this
-          // primitive. Doesn't yet take into account any material properties.
-          const module = this.getShaderModule();
-          return this.device.createRenderPipeline({
-            label: 'glTF renderer pipeline',
-            layout: this.gltfPipelineLayout,
-            vertex: {
-              module,
-              entryPoint: 'vertexMain',
-              buffers: bufferLayout,
-            },
-            primitive: {
-              topology: TinyGltfWebGpu.gpuPrimitiveTopologyForMode(primitive.mode),
-              cullMode: 'back',
-            },
-            multisample: {
-              count: this.app.sampleCount,
-            },
-            depthStencil: {
-              format: this.app.depthFormat,
-              depthWriteEnabled: true,
-              depthCompare: 'less',
-            },
-            fragment: {
-              module,
-              entryPoint: 'fragmentMain',
-              targets: [{
-                format: this.app.colorFormat,
-              }],
-            },
-          });
-        }
-
-        render(renderPass) {
-          renderPass.setBindGroup(0, this.app.frameBindGroup);
-
-          for (const [node, gpuNode] of this.nodeGpuData) {
-            renderPass.setBindGroup(1, gpuNode.bindGroup);
-
-            const mesh = this.gltf.meshes[node.mesh];
-            for (const primitive of mesh.primitives) {
-              const gpuPrimitive = this.primitiveGpuData.get(primitive);
-
-              renderPass.setPipeline(gpuPrimitive.pipeline);
-
-              for (const [bufferIndex, gpuBuffer] of Object.entries(gpuPrimitive.buffers)) {
-                // Only change to the render loop is that we start setting offsets for the
-                // vertex buffers now.
-                renderPass.setVertexBuffer(bufferIndex, gpuBuffer.buffer, gpuBuffer.offset);
-              }
-
-              if (gpuPrimitive.indexBuffer) {
-                renderPass.setIndexBuffer(gpuPrimitive.indexBuffer, gpuPrimitive.indexType, gpuPrimitive.indexOffset);
-                renderPass.drawIndexed(gpuPrimitive.drawCount);
-              } else {
-                renderPass.draw(gpuPrimitive.drawCount);
-              }
-            }
-          }
+      for (const node of gltf.nodes) {
+        if ('mesh' in node) {
+          this.setupMeshNode(gltf, node);
         }
       }
 
-      const demo = new GltfDemo(GltfRenderer, 'buggy');
-    </script>
-  </body>
-</html>
+      for (const mesh of gltf.meshes) {
+        for (const primitive of mesh.primitives) {
+          this.setupPrimitive(gltf, primitive);
+        }
+      }
+    }
+
+    getShaderModule() {
+      if (!this.shaderModule) {
+        const code = `
+          struct Camera {
+            projection : mat4x4<f32>,
+            view : mat4x4<f32>,
+            position : vec3<f32>,
+            time : f32,
+          };
+          @group(0) @binding(0) var<uniform> camera : Camera;
+
+          @group(1) @binding(0) var<uniform> model : mat4x4<f32>;
+
+          struct VertexInput {
+            @location(${ShaderLocations.POSITION}) position : vec3<f32>,
+            @location(${ShaderLocations.NORMAL}) normal : vec3<f32>,
+          };
+
+          struct VertexOutput {
+            @builtin(position) position : vec4<f32>,
+            @location(0) normal : vec3<f32>,
+          };
+
+          @vertex
+          fn vertexMain(input : VertexInput) -> VertexOutput {
+            var output : VertexOutput;
+
+            output.position = camera.projection * camera.view * model * vec4(input.position, 1.0);
+            output.normal = normalize((camera.view * model * vec4(input.normal, 0.0)).xyz);
+
+            return output;
+          }
+
+          // Some hardcoded lighting
+          const lightDir = vec3(0.25, 0.5, 1.0);
+          const lightColor = vec3(1.0, 1.0, 1.0);
+          const ambientColor = vec3(0.1, 0.1, 0.1);
+
+          @fragment
+          fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
+            // An extremely simple directional lighting model, just to give our model some shape.
+            let N = normalize(input.normal);
+            let L = normalize(lightDir);
+            let NDotL = max(dot(N, L), 0.0);
+            let surfaceColor = ambientColor + NDotL;
+
+            return vec4(surfaceColor, 1.0);
+          }
+        `;
+
+        this.shaderModule = this.device.createShaderModule({
+          label: 'Simple glTF rendering shader module',
+          code,
+        });
+      }
+
+      return this.shaderModule;
+    }
+
+    setupMeshNode(gltf, node) {
+      const nodeUniformBuffer = this.device.createBuffer({
+        size: 16 * Float32Array.BYTES_PER_ELEMENT,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+      });
+      this.device.queue.writeBuffer(nodeUniformBuffer, 0, node.worldMatrix);
+
+      const bindGroup = this.device.createBindGroup({
+        label: `glTF Node BindGroup`,
+        layout: this.nodeBindGroupLayout,
+        entries: [{
+          binding: 0, // Node uniforms
+          resource: { buffer: nodeUniformBuffer },
+        }],
+      });
+
+      this.nodeGpuData.set(node, { bindGroup });
+    }
+
+    setupPrimitive(gltf, primitive) {
+      // Note that these are maps now!
+      const bufferLayout = new Map();
+      const gpuBuffers = new Map();
+      let drawCount = 0;
+
+      for (const [attribName, accessorIndex] of Object.entries(primitive.attributes)) {
+        const accessor = gltf.accessors[accessorIndex];
+        const bufferView = gltf.bufferViews[accessor.bufferView];
+
+        const shaderLocation = ShaderLocations[attribName];
+        if (shaderLocation === undefined) { continue; }
+
+        const offset = accessor.byteOffset;
+
+        let buffer = bufferLayout.get(accessor.bufferView);
+        let gpuBuffer;
+        // If the delta between attributes falls outside the bufferView's stated arrayStride,
+        // then the buffers should be considered separate.
+        let separate = buffer && (Math.abs(offset - buffer.attributes[0].offset) >= buffer.arrayStride);
+        // If we haven't seen this buffer before OR have decided that is should be separate
+        // because its offset is too large, create a new buffer entry for the pipeline's vertex
+        // layout.
+        if (!buffer || separate) {
+          buffer = {
+            arrayStride: bufferView.byteStride || TinyGltfWebGpu.packedArrayStrideForAccessor(accessor),
+            attributes: [],
+          };
+          // If the buffers are separate due to offset, don't use the bufferView index to track
+          // them. Use the attribName instead, which is guaranteed to be unique.
+          bufferLayout.set(separate ? attribName : accessor.bufferView, buffer);
+          // We're going to start tracking the gpuBuffers by the buffer layout now rather than
+          // the bufferView, since we might end up with multiple buffer layouts all
+          // pointing at the same bufferView.
+          gpuBuffers.set(buffer, {
+            buffer: gltf.gpuBuffers[accessor.bufferView],
+            offset
+          });
+        } else {
+          gpuBuffer = gpuBuffers.get(buffer);
+          // Track the minimum offset across all attributes that share a buffer.
+          gpuBuffer.offset = Math.min(gpuBuffer.offset, offset);
+        }
+
+        // Add the attribute to the buffer layout
+        buffer.attributes.push({
+          shaderLocation,
+          format: TinyGltfWebGpu.gpuFormatForAccessor(accessor),
+          offset,
+        });
+
+        drawCount = accessor.count;
+      }
+
+      // For each buffer, normalize the attribute offsets by subtracting the buffer offset from
+      // the attribute offsets.
+      for (const buffer of bufferLayout.values()) {
+        const gpuBuffer = gpuBuffers.get(buffer);
+        for (const attribute of buffer.attributes) {
+          attribute.offset -= gpuBuffer.offset;
+        }
+      }
+
+      const gpuPrimitive = {
+        // Moved the pipeline creation to a helper function to help keep these code
+        // snippets focused.
+        pipeline: this.getPipelineForPrimitive(primitive, bufferLayout.values()),
+        buffers: [...gpuBuffers.values()],
+        drawCount
+      };
+
+      // If the primitive has index data, store the index buffer, offset, type, count as well.
+      if ('indices' in primitive) {
+        const accessor = gltf.accessors[primitive.indices];
+        gpuPrimitive.indexBuffer = gltf.gpuBuffers[accessor.bufferView];
+        gpuPrimitive.indexOffset = accessor.byteOffset;
+        gpuPrimitive.indexType = TinyGltfWebGpu.gpuIndexFormatForComponentType(accessor.componentType);
+        gpuPrimitive.drawCount = accessor.count;
+      }
+
+      this.primitiveGpuData.set(primitive, gpuPrimitive);
+    }
+
+    // Moved the pipeline creation out to a helper function for clarity. This will also help in
+    // subsequent samples.
+    getPipelineForPrimitive(primitive, bufferLayout) {
+      // Create a render pipeline that is compatible with the vertex buffer layout for this
+      // primitive. Doesn't yet take into account any material properties.
+      const module = this.getShaderModule();
+      return this.device.createRenderPipeline({
+        label: 'glTF renderer pipeline',
+        layout: this.gltfPipelineLayout,
+        vertex: {
+          module,
+          entryPoint: 'vertexMain',
+          buffers: bufferLayout,
+        },
+        primitive: {
+          topology: TinyGltfWebGpu.gpuPrimitiveTopologyForMode(primitive.mode),
+          cullMode: 'back',
+        },
+        multisample: {
+          count: this.app.sampleCount,
+        },
+        depthStencil: {
+          format: this.app.depthFormat,
+          depthWriteEnabled: true,
+          depthCompare: 'less',
+        },
+        fragment: {
+          module,
+          entryPoint: 'fragmentMain',
+          targets: [{
+            format: this.app.colorFormat,
+          }],
+        },
+      });
+    }
+
+    render(renderPass) {
+      renderPass.setBindGroup(0, this.app.frameBindGroup);
+
+      for (const [node, gpuNode] of this.nodeGpuData) {
+        renderPass.setBindGroup(1, gpuNode.bindGroup);
+
+        const mesh = this.gltf.meshes[node.mesh];
+        for (const primitive of mesh.primitives) {
+          const gpuPrimitive = this.primitiveGpuData.get(primitive);
+
+          renderPass.setPipeline(gpuPrimitive.pipeline);
+
+          for (const [bufferIndex, gpuBuffer] of Object.entries(gpuPrimitive.buffers)) {
+            // Only change to the render loop is that we start setting offsets for the
+            // vertex buffers now.
+            renderPass.setVertexBuffer(bufferIndex, gpuBuffer.buffer, gpuBuffer.offset);
+          }
+
+          if (gpuPrimitive.indexBuffer) {
+            renderPass.setIndexBuffer(gpuPrimitive.indexBuffer, gpuPrimitive.indexType, gpuPrimitive.indexOffset);
+            renderPass.drawIndexed(gpuPrimitive.drawCount);
+          } else {
+            renderPass.draw(gpuPrimitive.drawCount);
+          }
+        }
+      }
+    }
+  }
+
+  const demo = new GltfDemo(GltfRenderer, 'buggy');
+</script>

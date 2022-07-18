@@ -14,8 +14,14 @@ injectedStyle.innerText = `
     font-family: sans-serif;
   }
 
+  body {
+    display: flex;
+    flex-flow: column;
+    height: 100%;
+  }
+
   canvas {
-    position: absolute;
+    position: relative;
     z-index: 0;
     height: 100%;
     width: 100%;
@@ -33,6 +39,11 @@ injectedStyle.innerText = `
     margin: 1em;
   }
 
+  header a {
+    display: block;
+    font-size: 0.9em;
+  }
+
   .error {
     position: absolute;
     z-index: 2;
@@ -44,10 +55,33 @@ injectedStyle.innerText = `
 
   .tp-dfwv {
     z-index: 3;
+    margin-top: 4em;
   }
 
   .tp-lblv_v {
     width: 140px !important;
+  }
+
+  .nav {
+    flex: 0 1 auto;
+  }
+
+  .section {
+    flex: 1 1 auto;
+  }
+
+  .section, .section div {
+    height: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  .section .container {
+    max-width: none !important;
+  }
+
+  .footer {
+    display: none;
   }
 `;
 document.head.appendChild(injectedStyle);
@@ -74,14 +108,19 @@ export class TinyWebGpuDemo {
   #frameMsIndex = 0;
 
   constructor() {
-    this.canvas = document.createElement('canvas');
+    this.canvas = document.querySelector('.webgpu-canvas');
+
+    if (!this.canvas) {
+      this.canvas = document.createElement('canvas');
+      document.body.appendChild(this.canvas);
+    }
     this.context = this.canvas.getContext('webgpu');
     this.pane = new Tweakpane.Pane();
 
     this.camera = new OrbitCamera(this.canvas);
 
     // Attach the demo elements to the DOM
-    document.body.appendChild(this.canvas);
+
 
     this.resizeObserver = new ResizeObserverHelper(this.canvas, (width, height) => {
       if (width == 0 || height == 0) { return; }
@@ -131,7 +170,7 @@ export class TinyWebGpuDemo {
   setError(error, contextString) {
     let prevError = document.querySelector('.error');
     while (prevError) {
-      document.body.removeChild(document.querySelector('.error'));
+      this.canvas.parentElement.removeChild(document.querySelector('.error'));
       prevError = document.querySelector('.error');
     }
 
@@ -141,7 +180,7 @@ export class TinyWebGpuDemo {
       errorElement.innerHTML = `
         <p style='font-weight: bold'>An error occured${contextString ? ' while ' + contextString : ''}:</p>
         <pre>${error?.message ? error.message : error}</pre>`;
-      document.body.appendChild(errorElement);
+        this.canvas.parentElement.appendChild(errorElement);
     }
   }
 
