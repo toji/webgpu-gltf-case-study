@@ -33,7 +33,7 @@ injectedStyle.innerText = `
   .error {
     position: absolute;
     z-index: 2;
-    inset: 5em 3em;
+    inset: 9em 3em;
     margin: 0;
     padding: 0;
     color: #FF8888;
