@@ -7,21 +7,31 @@ menubar_toc: true
 
 ## Introduction
 
-The WebGPU API is designed to make communicating between your code (ie: JavaScript in a browser) and the GPU more efficient. It builds on top of modern, fast native APIs such as Vulkan, Metal, or Direct3D 12, and as a result surfaces many of the same patterns for interacting with the GPU that those APIs established. One of the primary patterns that are seen in these APIs to achive this efficiency is defining the resources and state needed for rendering early on in large atomic bundles which can be validated once and creation time. This allows those same resources and state to be set quickly when it comes time to render with minimal overhead.
+**WebGPU is a new, modern API for using the GPU on the web more efficiently than ever before.**
 
-It's a highly effective pattern, but one that can initially feel awkward to work with for developers coming from APIs that allowed state to be defined more piecemeal at render time. As a result, new WebGPU developers may run into tricky situations when starting a new project or porting older code to the newer API and find themselves applying patterns that don't feel like an effective use of the API simply because it's difficult to see how to handle it better.
+It's built to run on top of the latest native APIs such as Vulkan, Metal, and Direct3D 12, and as a result it uses many of the same patterns for interacting with the GPU that those APIs established.
 
-This document will walk through one such common and potentially confusing scenario: rendering [glTF 2.0 models](https://www.khronos.org/gltf/). Given that the design of glTF was heavily influenced by the WebGL/OpenGL ES APIs, it offers a good case-study for ways to approach these types of problems in WebGPU that will hopefully be applicable to situations that extend well beyond use of the format itself.
+For developers that are familar with other GPU APIs, such as WebGL, or are using data that was built with other APIs in mind, adjusting to using these new patterns effectively can be challenging at first.
 
-Having said that, it's worth keeping in mind that any patterns used to improve rendering efficiency will have upsides and downsides. There's rarely a "perfect" solution for any given problem, only a solution that works well with the tradeoffs your app is willing to make. Nothing in this doc should be seen as the definitive Correct Way To Do Things™️, it's just a collection of ways you _can_ apply WebGPU features to this particular use case.
+This document walks through one such common and potentially difficult scenario: rendering [glTF 2.0 models](https://www.khronos.org/gltf/). Given that the design of glTF was heavily influenced by the WebGL/OpenGL ES APIs, it offers a good case-study for ways to approach these types of problems in WebGPU that will hopefully be applicable to situations that extend well beyond use of the format itself.
 
-## Who this document is for
+### What we'll be covering
+
+One of the core differences between WebGPU and an API like WebGL, and thus one of the reasons it's more efficient, is that WebGPU leans heavily on defining bundles of immutable state which undergo strict validation once at creation time. This allows that same state to be set quickly when it comes time to render with minimal overhead, because the state they describe is already known to be valid.
+
+It's a highly effective pattern, but one that can initially feel awkward to work with for developers coming from WebGL, which allowed state to be defined more piecemeal at render time. WebGL's validation was also less strict, allowing wider combinations of state with the expectation that the driver would normalize it into a more GPU-friendly form at runtime. Formats like glTF mirrored some of those patterns in the file structure, and as a result developers may run into complications when implementing a renderer for the format in WebGPU (or, generally, porting any WebGL-based code). It can be easy to fall into patterns that don't effectively use the API when attempting a direct translation between APIs.
+
+In this document, we'll try to illustrate some of those challenges by creating a "naive" glTF renderer with WebGPU. Then we'll progressively refine it to make better use of the API and add more features until we've arrived at a renderer that makes much better, more efficent use of WebGPU's design.
+
+Having said that, it's worth keeping in mind that any patterns used to improve rendering efficiency will have upsides and downsides. There's rarely a "perfect" solution for any given problem, only a solution that works well with the tradeoffs your app is able and willing to make. Nothing in this doc should be seen as the definitive Correct Way To Do Things™️. Instead it should be seen as a collection patterns you _can_ apply when working with WebGPU.
+
+### Who this document is for
 
 Despite the fact that we'll be covering ways of rendering glTF models with WebGPU this is _not_ a glTF or WebGPU tutorial. Most of the glTF loading and parsing will be handwaved as "and then a library handles this part", and we're not going to spend any time talking about WebGPU basics like initialization, core API usage, or the shader language.
 
-Instead we'll be focusing on how the data contained in the glTF maps to various WebGPU concepts, why some of those mappings can initially lead to inefficent use of WebGPU, and strategies for improving it.
+Instead we'll be focusing on how the data contained in the glTF files maps to various WebGPU concepts, why some of those mappings can initially lead to inefficent use of WebGPU, and strategies for improving it.
 
-Ideally you'd want to read through this document after you've _at least_ done a few "Hello world" WebGPU excercises where you've been able to get triangles on the screen, and it would be helpful if you take some time to look over the [glTF 2.0 reference guide](https://www.khronos.org/files/gltf20-reference-guide.pdf) if you're not already familiar with the file format.
+Ideally you'd want to read through this document after you've _at least_ done a few WebGPU "Hello world" excercises where you've been able to get triangles on the screen, and it would be helpful if you take some time to look over the [glTF 2.0 reference guide](https://www.khronos.org/files/gltf20-reference-guide.pdf) if you're not already familiar with the file format.
 
 If you haven't done any WebGPU development before, these are some great resources to start with!
 
@@ -36,9 +46,9 @@ Let's start by looking at what it takes to do the most straighforward "get trian
 
 ### A brief primer on glTF meshes
 
-glTF is a popular format for delivering and loading runtime 3D assets, especially because it was designed to work well with web-friendly concepts like JSON and ArrayBuffers. As mentioned earlier, it was also designed with any eye towards being easy to display with WebGL (Or OpenGL ES), using enum values from that API to encode certain peices of state. It's absolutely possible to load glTF assets and display them efficiently with WebGPU, but this slight bias towards the older API means that the data as represented in the file sometimes needs to be transformed to fit the expected structure.
+glTF is a popular format for delivering and loading runtime 3D assets, especially because it was designed to work well with web-friendly concepts like [JSON](https://www.json.org/json-en.html) and [ArrayBuffers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer). As mentioned earlier, it was also designed with an eye towards being easy to display with WebGL (or OpenGL ES). It uses enum values from that API to encode certain peices of state, and formats it's data in such a way that it's easy to pass directly to the associated WebGL methods. It's absolutely possible to load glTF assets and display them efficiently with WebGPU (or any othe GPU API for that matter), but this slight bias towards the older API means that the data in the file sometimes needs to be transformed to satisfy WebGPUs expected structure.
 
-A perfect example of this is how glTF encodes vertex buffer data. glTF files define `meshes` which each contain a list of chunks of renderable geometry called (confusingly) `primitives`. A `primitive` is represented as a list of named `attributes`, and a `mode` (what WebGPU calls "primitive topology"). Primitives also reference a `material` and possibly `indices`, but let's ignore those for the moment to make things simpler.
+A perfect example of this is how glTF encodes vertex buffer data. glTF files define `meshes` which each contain a list of chunks of renderable geometry called (confusingly) `primitives`. A `primitive` is represented as a list of named `attributes`, and a `mode` (triangles, lines, or points). Primitives also reference a `material` and possibly `indices`, but let's ignore those for the moment to make things simpler.
 
 ```json
 "meshes": [{
@@ -54,7 +64,7 @@ A perfect example of this is how glTF encodes vertex buffer data. glTF files def
 
 (Aside: Personally I think `primitives` is a terrible name for this, as a "primitive" suggests to me a single point, line, or triangle, not a whole list of them. I would have gone with something like "submesh". But since `primitives` is the term used by glTF I'll use it throughout this doc to refer to the same concept for consistency.)
 
-The attributes are indexes into an array of what glTF calls "Accessors", which in turn point into an array of "Buffer Views" that describes a range of a larger buffer and how the data is laid out within it:
+The attributes are indexes into an array of what glTF calls `accessors`, which in turn point into an array of `bufferViews` that describes a range of a larger binary `buffer` and how the data is laid out within it:
 
 ```json
 "accessors": [{          // POSITION attribute
@@ -86,12 +96,15 @@ The attributes are indexes into an array of what glTF calls "Accessors", which i
 }]
 ```
 
-Finally, you need to know where each mesh should be displayed in the scene, and that's defined by a tree of `nodes`, each of which can have a transform and, optionally, define which `mesh` should be rendered at that transform. (A single `mesh` could be referenced by multiple `nodes`, making each `node` effectively an instance of that `mesh`.)
+Finally, glTF also defines where each `mesh` should be displayed in the scene, defined by a tree of `nodes`. Each `node` can have a transform and, optionally, define which `mesh` should be rendered at that transform.
 
 ```json
 "nodes": [{
   "translation": [ 1,0,0 ],
   "mesh": 0
+}, {
+  "translation": [ 0,0,0 ],
+  "mesh": 1
 }, {
   "translation": [ -1,0,0 ],
   "mesh": 0
