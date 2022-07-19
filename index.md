@@ -430,7 +430,7 @@ Click to launch **Sample 01 - Naive Rendering**](01-naive-renderer.html)
 
 So... triangles on screen! Victory! Slap some materials on there and call it a day, right?
 
-Unfortunately there's some unintuitive edge cases that you can run into as you try loading more models, causing this basic renderer to fail. Also, this approach will probably be fine for individual models on at least modestly powerful devices. But what if you aspire to bigger things? You want to perform well on the most lowely mobile devices, or be able to render much bigger scenes comprised of many models! This naive approach probably won't hold up.
+Unfortunately there's some unintuitive edge cases that you can run into as you try loading more models, causing this basic renderer to fail. Also, this approach will probably be fine for individual models on at least modestly powerful devices. But what if you aspire to bigger things? You want to perform well on the most lowly mobile devices, or be able to render much bigger scenes comprised of many models! This naive approach probably won't hold up.
 
 With that in mind, let's start looking at techniques that we can use to improve on this first pass!
 
@@ -832,7 +832,7 @@ function getPipelineForPrimitive(args) {
     return pipeline;
   }
 
-  // In no compatible pipeline exists, create a new one.
+  // If no compatible pipeline exists, create a new one.
   const module = getShaderModule();
   pipeline = device.createRenderPipeline({
     vertex: {
@@ -1707,7 +1707,7 @@ function createSolidColorTexture(r, g, b, a) {
 }
 ```
 
-In additiona to that you'll likely find that you'll want to keep a transparent black texture for thing like emissive texture defaults and a default normal texture as well:
+In addition to that you'll likely find that you'll want to keep a transparent black texture for thing like emissive texture defaults and a default normal texture as well:
 
 ```js
 const opaqueWhiteTexture = createSolidColorTexture(1, 1, 1, 1);
@@ -1769,7 +1769,7 @@ And with that we're now passing all the information we need to begin rendering w
 
 ## Part 5.2: Using materials in the shader
 
-Writing shaders that efficiently render PBR materials like those used by glTF is, to put it mildly, a large topic. You can find volumes of writing from talented developers who have spent far more time researching the topic than I have with you favorite search engine, so I'm not even going to try to capture the full scope of it here.
+Writing shaders that efficiently render PBR materials like those used by glTF is, to put it mildly, a large topic. You can find volumes of writing from talented developers who have spent far more time researching the topic than I have with your favorite search engine, so I'm not even going to try to capture the full scope of it here.
 
 Instead what I'm most interested in is covering some basic patterns that can be used when writing shaders so that they can handle a variety of common scenarios, which will hopefully allow you to easily expand the shaders to encompass material properties beyond the ones we cover here.
 
@@ -1844,7 +1844,7 @@ const ShaderLocations = {
   <summary markdown=span><b>A note on glTF texture coordinates</b></summary>
   glTF supports using multiple different sets of texture coordinates for a single primitive, denoted by the number at the end of the attribute name. `TEXCOORD_1`, `TEXCOORD_4`, etc. These will then correspond with the optional `texCoord` value specified in the [material's texture references](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#reference-textureinfo).
 
-  This can be useful for certain types of effects, but in my experience it's fairly rare that models actually make use of multiple texture coordinates in a meaningful way. As such, this document will be ignoring them for simlicity, but be aware that it's something that needs to be considerd if you are trying to make a strictly compliant glTF renderer.
+  This can be useful for certain types of effects, but in my experience it's fairly rare that models actually make use of multiple texture coordinates in a meaningful way. As such, this document will be ignoring them for simplicity, but be aware that it's something that needs to be considered if you are trying to make a strictly compliant glTF renderer.
 </details>
 
 Then the texture coordinate attribute can be accessed in the vertex shader and passed along to the fragment shader.
@@ -1924,7 +1924,7 @@ For example, a missing texture coordinate can be accounted for by simply allocat
 
 There's a variant of the same trick where you can generate a much smaller buffer by specifying in the render pipeline's vertex state that the buffer's step mode is `"instance"`, at which point you only have to create a buffer large enough to contain one attribute value per instance. This saves quite a bit of memory, but works best when you know in advance how many instances of a given object could ever be rendered (or, at the very least, the maximum number of instances that your app will render at a time.)
 
-If the attribute that you are missing is something like a normal, however, then blindly using a buffer full of zeros in it's place will result in broken lighting. You'd need to generate reasonable normals based off the model geometry, which is much more involved.
+If the attribute that you are missing is something like a normal, however, then blindly using a buffer full of zeros in its place will result in broken lighting. You'd need to generate reasonable normals based off the model geometry, which is much more involved.
 
 A different approach, and the one that we'll cover here, is to create a new variant of the shader that accounts for the missing atributes somehow. As a general rule you want to avoid shader variants as much as possible, for all the same reasons you want to avoid pipeline variants (and because every shader variant requires a pipeline variant), but sometimes it's simply the most effective approach.
 
@@ -2212,7 +2212,7 @@ And just like that, we've now eliminated redundant material bind group setting! 
 
 ## That's a wrap!
 
-And that, dear reader, brings us to the end of this (very long) case study in rendering glTF files with WebGPU. Now obviously we haven't got anything approaching a "fully featured" rendered at this point, but the patterns that we've covered in this document should hopefully lend themselves to being extended to handle more features, material properties, and edge cases.
+And that, dear reader, brings us to the end of this (very long) case study in rendering glTF files with WebGPU. Now obviously we haven't got anything approaching a "fully featured" renderer at this point, but the patterns that we've covered in this document should hopefully lend themselves to being extended to handle more features, material properties, and edge cases.
 
 ## Appendix A: glTF/WebGPU helper functions
 
