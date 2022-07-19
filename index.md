@@ -113,7 +113,7 @@ Finally, glTF also defines where each `mesh` should be displayed in the scene, d
 
 ### Rendering with WebGL
 
-In WebGL, you would generally expect to upload the data from the Buffer View pointed at by each primitive attribute as a vertex buffer. Then at render time you'd, walk through the `node` tree and for each `primitive` of each `mesh` make a `gl.vertexAttribPointer()` call for each `attribute` with the data from their `accessor`, almost directly:
+In WebGL, you would generally expect to upload the data from the `bufferView` pointed at by each of the `primitive.attributes` as a vertex buffer (`gl.ARRAY_BUFFER` in WebGL terms). Then at render time you'd, walk through the `node` tree and for each `primitive` of each `mesh` make a `gl.vertexAttribPointer()` call for each `attribute` with the data from their `accessor`, almost directly:
 
 ```js
 // Simplified WebGL glTF rendering
@@ -160,13 +160,15 @@ That code snippet is far from optimal, but the point is to show how the glTF dat
    - And finally many of the tips below about sorting buffers and reducing state changes ALSO apply to WebGL!
 </details><br/>
 
-### A naive first pass at WebGPU rendering
+### First pass at rendering with WebGPU
 
 So how would we render the same data with WebGPU?
 
 ### Vertex buffer uploading
 
-As with the WebGL version, you would first identify all the `bufferViews` referenced by the `primitive.attributes` and upload their data to `GPUVertexBuffer`s. This is relatively straightforward and we won't spend much time on it here, the trickiest bit is simply remembering that WebGPU buffer sizes must be a multiple of 4, a restriction that didn't exist in WebGL. As such we need to round up the allocated size to the nearest multiple of four. It also makes it easier in this case to use buffer mapping rather than `writeBuffer()` to set the data, since `writeBuffer()` also requires that the data size to upload be a multiple of 4 but `TypedArray.set()` can handle any size.
+As with the WebGL version, you would first identify all the `bufferViews` referenced by the `primitive.attributes` and upload their data to `GPUVertexBuffer`s. This is relatively straightforward and kind of hard to do in a way that's "wrong", so we won't spend much time on it here.
+
+The trickiest bit is that **WebGPU buffer sizes must be a multiple of 4**, a restriction that didn't exist in WebGL. As such we need to round up the allocated size to the nearest multiple of four. That fact also makes it easier in this case to use buffer mapping rather than `writeBuffer()` to set the data, since `writeBuffer()` also requires that the data size to upload be a multiple of 4 but `TypedArray.set()` can handle any size as long as the destination buffer is at least as large as the source.
 
 ```js
 function createVertexBufferForBufferView(bufferView) {
@@ -191,9 +193,11 @@ function createVertexBufferForBufferView(bufferView) {
 
 The next thing that you'll notice if you start digging into it is that the buffer/attribute properties that we spend so much of the WebGL rendering code setting up aren't defined during the render loop at all in WebGPU. Instead, they're set as part of a much larger bundle of state called the `GPURenderPipeline`.
 
-A `GPURenderPipeline` contains the majority of the state needed for rendering, such as the shaders, vertex layout, culling behavior, blending behavior, etc. The few bits of rendering state that aren't part of the pipeline are things like viewport and scissor rects. If you are familiar with an API like WebGL, thinking about all this state as a single monolithic object can be difficult, because you're likely used to being able to configure them all separately with calls like `gl.enable()` and `gl.vertexAttribPointer()`.
+A `GPURenderPipeline` contains the majority of the state needed for rendering, such which shaders to use, how the vertex data is laid out, culling behavior, blending behavior, etc. The few bits of rendering state that aren't part of the pipeline are things like viewport and scissor rects. Compared to WebGL, thinking about all this state as a single monolithic object can be difficult.
 
-Render pipelines are also fairly expensive to create, and can cause hitches if you are creating them while rendering. As a result we'll want to build all of our render pipelines at load time. And since glTF doesn't offer any guarantees about the structure or order of it's attribute data, which is part of the render pipeline state, we'll start by creating a pipeline that matches the requirements for each `primitive` in file.
+Render pipelines are also fairly expensive to create, and can cause hitches if you create them while rendering. As a result we'll want to build all of our render pipelines at the point we load our model, rather than during the main render loop when it will cause the most visible stutters.
+
+As a final challenge, glTF doesn't offer any guarantees about the structure or order of it's attribute data, which is part of the render pipeline state. As such it can be difficult to know what pipelines are needed for the file. Because of this uncertainty, it's not unusual to start out by creating a new pipeline for each `primitive` in file.
 
 ```js
 // A naive first pass at defining glTF geometry layout for WebGPU
@@ -264,7 +268,7 @@ function setupPrimitive(gltf, primitive) {
 }
 ```
 
-I'm going to glaze over the shader returned by `getShaderModule()` because it's not particularly important at this point. All we care about is getting the geometry on screen, so the shader can simply consume the vertex attributes, apply the appropriate transform, and output white triangles. (I gave it some really simple lighting in the live samples so you could see the shape of the geometry better.)
+I'm going to glaze over the shader returned by `getShaderModule()` because it's not particularly important at this point. All we care about is getting the geometry on screen, so the shader can simply consume the vertex attributes, apply the appropriate transform, and output white triangles. (I gave it some really simple lighting in the live samples so you could see the shape of the geometry better.) We'll talk more about the shaders when we start looking at materials near the end of this document.
 
 <details markdown=block>
   <summary markdown=span><b>Click here if you want to see the shader code anyway</b></summary>
@@ -351,7 +355,11 @@ function getShaderModule() {
 
 ### Transform bind groups
 
-Next, in order for each of the meshes to be rendered in the correct place, we also need to have a uniform that contains the transform matrix for the node that the mesh is attached to. Fortunately this is less complicated.
+Next, in order for each of the meshes to be rendered in the correct place, we also need to supply the shader with a matrix to transform them with. This transform comes from the node that the mesh is attached to, and is affected by the transform of every parent node above it in the node tree. (The combined node and node parent transform is commonly known as the "World Transform".)
+
+In WebGL you would most commonly set a uniform by calling `gl.uniformMatrix4fv()` that contains the transform matrix, but in WebGPU uniforms can only come from buffers (similar to WebGL 2's Uniform Buffer Objects.) So a uniform buffer with enough space for the matrix needs to be allocated and populated with the node's transform. Then the buffer is them made visible to the shader via a `GPUBindGroup`.
+
+While that is undeniably more complicated than the WebGL approach, at least in terms of load-time setup, it's fortunately still not too bad. For our naive rendering approach we'll create one uniform buffer and bind group for each `node` that has a `mesh`.
 
 ```js
 // This will be used to store WebGPU information about our nodes.
@@ -381,7 +389,7 @@ function setupMeshNode(gltf, node) {
 
 ### Render loop
 
-Once you've created all the necessary pipelines and bind groups, you can then begin drawing the glTF model in your render loop, which is probably going to look something like this:
+Once you've created all the necessary pipelines and bind groups, you can then begin drawing the glTF model in a render loop]. Ours will look something like this:
 
 ```js
 function renderGltf(gltf, renderPass) {
@@ -422,11 +430,9 @@ Click to launch **Sample 01 - Naive Rendering**](01-naive-renderer.html)
 
 So... triangles on screen! Victory! Slap some materials on there and call it a day, right?
 
-Well, there's some unintuitive edge cases that you may not run into right away but could cause this rendering code to fail it you did encounter it.
+Unfortunately there's some unintuitive edge cases that you can run into as you try loading more models, causing this basic renderer to fail. Also, this approach will probably be fine for individual models on at least modestly powerful devices. But what if you aspire to bigger things? You want to perform well on the most lowely mobile devices, or be able to render much bigger scenes comprised of many models! This naive approach probably won't hold up.
 
-Also, this approach will probably be fine for individual models on at least modestly powerful devices. But what if you aspire to bigger things? You want to perform well on the most lowely mobile devices, or be able to render much bigger scenes comprised of many models! This naive approach probably won't hold up.
-
-So, what are some techniques that we can use to improve on this first pass?
+With that in mind, let's start looking at techniques that we can use to improve on this first pass!
 
 ## Part 2: Improving buffer bindings.
 
