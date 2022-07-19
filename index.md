@@ -1112,7 +1112,7 @@ If you're not familiar with the concept, Instancing in a graphics API is when yo
 
 ### Shader and buffer changes
 
-When drawing instanced geometry, you need to provide something that communicates which data is different for each instance (otherwise why are you drawing the same thing over and over again?) There's two ways to do this: Either as a vertex buffer using `stepMode: 'instance'` in the pipeline's vertex state, or as a uniform or storage buffer that you index into using a per-instance index in the shader. For this document we'll take the latter approach since it maps a bit better to what we've already been doing.
+When drawing instanced geometry, you need to provide something that communicates which data is different for each instance (otherwise why are you drawing the same thing over and over again?) There's two ways to do this: Either as a vertex buffer using `stepMode: 'instance'` in the pipeline's vertex state, or as an array in a uniform or storage buffer that you index into in the shader. For this document we'll take the latter approach since it maps a bit better to what we've already been doing.
 
 The concept is pretty simple. Previously in the vertex shader we were using a uniform buffer to communicate the model matrix for every draw call, as shown in this simplified shader:
 
@@ -1126,7 +1126,7 @@ fn vertexMain(@location(0) position : vec3<f32>) -> @builtin(position) vec4<f32>
 }
 ```
 
-All we need to do to take advantage of instancing is change that `modelMatrix` uniform from a single matrix into an array of them, then use the WGSL builtin `instance_index` value to index into it.
+All we need to do to take advantage of instancing is change that `modelMatrix` uniform from a single matrix into an array of them, then use the [WGSL builtin `instance_index` value](https://www.w3.org/TR/WGSL/#builtin-values) to index into it.
 
 ```rust
 @group(1) @binding(0) var<storage> modelMatrices : array<mat4x4<f32>>;
@@ -1138,17 +1138,18 @@ fn vertexMain(@location(0) position : vec3<f32>,
 }
 ```
 
-Easy, right? And that ALMOST works with zero other code changes. There is one thing that we need to change in our WebGPU setup code.
 
-You can see that between those two code snippets the binding type changed from `var<uniform>` to `var<storage>`, which means that the buffer we bind to it needs to change it's usage from `GPUBufferUsage.UNIFORM` to `GPUBufferUsage.STORAGE`.
+And that's it for the shader changes!
 
-Now, technically we CAN still use uniform buffers for our instance data. After all, uniform buffers can contain arrays, and the `instance_index` is just a regular `u32` value. The reason we're making the switch to a storage buffer here is that storage buffers allow for what's called "runtime sized arrays". That is, an array that doesn't have a specified length in the shader. Instead they implicitly let you index into as many elements as the storage buffer binding can contain.
+Next, we need to update our setup code to support this change as well. You can see that between those two code snippets the binding type changed from `var<uniform>` to `var<storage>`, which means that the buffer we bind to it needs to change it's usage from `GPUBufferUsage.UNIFORM` to `GPUBufferUsage.STORAGE`.
 
-In contrast, arrays into uniform buffers are required to have a fixed number of elements. This can work for instancing if, for instance, you know that you'll never render more than 100 instances of any given mesh at a time, but then you have to create each of your uniform buffers with enough space to define 100 instances worth of data and that's probably wasteful for most apps.
+Now, technically we _can_ still use uniform buffers for our instance data. After all, uniform buffers can contain arrays, and the `instance_index` is just a regular `u32` value. The reason we're making the switch to a storage buffer here is that storage buffers allow for what's called ["runtime sized arrays"](https://www.w3.org/TR/WGSL/#runtime-sized). That is, an array that doesn't have a specified length in the shader. Instead they implicitly let you index into as many elements as the storage buffer binding can contain.
+
+In contrast, arrays into uniform buffers are required to have a fixed number of elements. This can still work for instancing if, for example, you know that you'll never render more than 100 instances of any given mesh at a time, but then you have to create each of your uniform buffers with enough space to define 100 instances worth of data and that's probably wasteful for most apps.
 
 ### Gathering transforms
 
-After we make the above changes we still need to do some work to begin handling our transform data differently before we can start actually rendering more than once instance at a time.
+After we make the above changes we still need to do some work to pack our transform data differently before we can render more than once instance at a time.
 
 To do this, we're going to change up the `setupMeshNodes` function to no longer create bind groups, and instead just start collecting the transforms associated with each primitive.
 
@@ -1168,7 +1169,7 @@ function setupMeshNode(gltf, node, primitiveInstances) {
 }
 ```
 
-We still _need_ the bind groups, of course! One way to approach it is to create them at the same time we create the rest of the GPU data for our primitive, after we've collected all the `primitiveInstances` from the nodes.
+We still _need_ the bind groups, of course! For the moment we can create them at the same time we create the rest of the GPU data for our primitive, after we've collected all the `primitiveInstances` from the nodes.
 
 ```js
 function setupPrimitiveInstances(primitive, primitiveInstances) {
@@ -1218,11 +1219,11 @@ function setupPrimitive(gltf, primitive, primitiveInstances) {
 }
 ```
 
-And now we've gathered all the transforms needed for each primitive into a single bind group for that primitive.
+This gathers all the transforms needed for each primitive, copies them into a storage buffer large enough to hold all of them, and then creates a single bind group using that storage buffer for that primitive.
 
 ### Drawing instances
 
-Finally, in the render loop, we can take our `draw()` call out of the innermost for loop it was in to iterate over the instances. Instead we only have to set the bind group once per primitive and then pass the number of instances to draw to the `draw()` call's [`instanceCount` argument](https://gpuweb.github.io/gpuweb/#dom-gpurendercommandsmixin-drawindexed-indexcount-instancecount-firstindex-basevertex-firstinstance-firstindex)!
+Finally, in the render loop, we can take our `draw()` call out of the innermost for loop that was iterating over the instances. Instead we only have to set the bind group once per primitive and then pass the number of instances to the `draw()` call's [`instanceCount` argument](https://gpuweb.github.io/gpuweb/#dom-gpurendercommandsmixin-drawindexed-indexcount-instancecount-firstindex-basevertex-firstinstance-firstindex)!
 
 ```js
 function renderGltf(renderPass) {
@@ -1244,17 +1245,17 @@ function renderGltf(renderPass) {
 }
 ```
 
-For glTF models which take advantage of the ability for multiple nodes to reference a single mesh, this will now handle rendering of those case much more efficiently! In essence the loop that was here is still happening, but now we've pushed it down to the GPU's driver and given it a more efficient way to lookup the instance data. That can be a big performance win!
+For glTF models where multiple nodes reference a single mesh, this will now renderer them much more efficiently! In essence the loop that was here is still happening, but now we've pushed it down to the GPU's driver and given it a more efficient way to lookup the instance data. That can be a big performance win!
 
 "But wait!" you might say. "That depends on the structure of the glTF file and/or the way the artist prepared the model. There's lots of files out there that won't take advantage of this. What about them?"
 
-Well, good news! Even assuming that the file you load up has no opportunities for instancing at all, this approach is no worse than the previous version of the code. After all, previously we were creating a bunch of bind groups with only one transform in them and binding them one at a time, right? Well that's exactly what will happen in this code if no meshes are re-used. There's no penalty for passing `1` into the `instanceCount` of the `draw()` method. As mentioned earlier, that's the default anyway.
+Well, good news! Even assuming that the file you load up has no opportunities for instancing at all, this approach is no worse than the previous version of the code. After all, previously we were creating a bunch of bind groups with only one transform in them and binding them one at a time, right? Well that's exactly what will happen in this code if no meshes are re-used. There's no penalty for passing an `instanceCount` of `1` to the `draw()` method. As mentioned earlier, that's the default anyway!
 
 ### But we can still do better!
 
 Even in the case that we have no meshes that can be instanced, though, we can still use instancing to improve our render loop!
 
-With the above changes, we've gone from creating a buffer for each transform to creating a buffer for all the transforms for a given primitive. But why stop there? Since the format of the transform data is the same for every mesh we're rendering, we might as well put _all_ of the transforms for _all_ of the primitives into one big buffer!
+With the above changes, we've gone from creating a buffer for each transform to creating a buffer for all the transforms for a given primitive. But why stop there? Since the format of the transform data is the same for every mesh we're rendering, we might as well put _all_ of the transforms for _all_ of the primitives into **one big buffer**!
 
 This requires a tiny bit more planning, but ultimately it's a minor change to the code we've already got. First off, we'll need to start storing more information in our `primitiveInstances` than just the matrices.
 
@@ -1300,7 +1301,7 @@ const instanceBuffer = device.createBuffer({
 primitiveInstances.arrayBuffer = new Float32Array(instanceBuffer.getMappedRange());
 ```
 
-Now we setup all the primitives in the scene like usual, but when it's time to setup the instances for that primitive we write the matrices into the bigger buffer instead of creating a new one for each primitive. This requires us to track the offset of the last set of matrices that were written so that they don't overlap, and we'll need to store that offset as part of the primitives instance data (instead of the bind group).
+Now we setup all the primitives in the scene like usual, but when it's time to setup the instances for that primitive we write the matrices into the bigger buffer instead of creating a new one each time. This requires us to track the offset of the last set of matrices that were written so that they don't overlap, and we'll need to store that offset as part of the primitives instance data (instead of the bind group).
 
 It's worth noting that it's important to make sure that all the matrices for a single primitive are adjacent in the buffer or else instancing won't work properly.
 
@@ -1332,9 +1333,11 @@ Once we've written all of the instance matrices for all of the primitives into t
 instanceBuffer.unmap();
 ```
 
-So now all the matrices used by our scene are in one big buffer! But how do we tell each draw call what part of that buffer to use? You _could_ do it with bind groups. One option is creating a new bind group for each primitve and setting the `resource.offset` to the appropriate point in the buffer when defining the bind group's buffer entry. Another approach would be to create a single bind group with [dynamic offsets](https://gpuweb.github.io/gpuweb/#dom-gpubufferbindinglayout-hasdynamicoffset) for the buffer binding, which would then allow you to set the offset into the buffer when you call `setBindGroup()`.
+So now all the matrices used by our scene are in one big buffer! But how do we tell each draw call what part of that buffer to use?
 
-Either of those approaches, though, will require you to call `setBindGroup()` once per primitive, which isn't really an improvement on what we had before. Instead, we can use an instancing trick that allows us to only set the bind group once. First, we create a single bind group that covers the entire instance buffer.
+You _could_ do it with bind groups. One option is creating a new bind group for each primitve and setting the `resource.offset` to the appropriate point in the buffer when defining the bind group's buffer entry. Another approach would be to create a single bind group with [dynamic offsets](https://gpuweb.github.io/gpuweb/#dom-gpubufferbindinglayout-hasdynamicoffset) for the buffer binding, which would then allow you to set the offset into the buffer when you call `setBindGroup()`.
+
+Either of those approaches, though, will still require you to call `setBindGroup()` once per primitive, which isn't really an improvement on what we had before. Instead, we can use an instancing trick that allows us to only set the bind group once. First, we create a single bind group that covers the entire instance buffer.
 
 ```js
 // Create a bind group for the instance buffer.
@@ -1349,7 +1352,7 @@ const instanceBindGroup = device.createBindGroup({
 
 In the render loop, we bind that new bind group once at the very beginning of the loop. Then for every `draw()` call we pass one new piece of information: The offset into the buffer (in matrices) as the [`firstInstance` argument](https://gpuweb.github.io/gpuweb/#dom-gpurendercommandsmixin-draw-vertexcount-instancecount-firstvertex-firstinstance-firstinstance).
 
-This changes the value of the [`@builtin(instance_index)`](https://gpuweb.github.io/gpuweb/wgsl/#builtin-values) in the shader. For example, normally if we call draw with an `instanceCount` of 4 and leave the `firstInstance` as its default (0), the `instance_index` for each primitive would be `0, 1, 2, 3`. But if we set the `firstInstance` to 12, then the `instance_index` for each primitive will be `12, 13, 14, 15`.
+This changes the value of the `@builtin(instance_index)` in the shader. For example, normally if we call draw with an `instanceCount` of 4 and leave the `firstInstance` as its default (0), the `instance_index` for each primitive would be `0, 1, 2, 3`. But if we set the `firstInstance` to 12, then the `instance_index` for each primitive will be `12, 13, 14, 15`.
 
 Since we're using the `instance_index` to index into our array of matrices, you can see that we can use this value to indicate what offset into that array we should start at!
 
@@ -1377,24 +1380,29 @@ function renderGltf(renderPass) {
 }
 ```
 
-By doing this, we eliminate a `setBindGroup()` call for every primitive we draw in favor of simply passing in another argument to `draw()`, which is definitely a win from the perspective of JavaScript overhead for our rendering! (The 0 in between the `instanceCount` and `firstInstance` args is the `baseVertex`, which can be useful if you're packing all the geometry for your meshes into a larger buffers, but which we won't be using in these samples.)
+By doing this, we eliminate a `setBindGroup()` call for every primitive we draw in favor of simply passing in another argument to `draw()`, which is definitely a win from the perspective of JavaScript overhead for our rendering!
 
-(Fun fact: This trick can't be done in WebGL or WebGL 2, as it doesn't have an equivalent to the `firstInstance` argument. It's in development as a [WebGL 2 extension](https://www.khronos.org/registry/webgl/extensions/WEBGL_draw_instanced_base_vertex_base_instance/), though!)
+<details markdown=block>
+  <summary markdown=span><b>Click for more instancing fun facts!</b></summary>
+  - The 0 in between the `instanceCount` and `firstInstance` args is the `baseVertex`, which can be useful if you're packing all the geometry for your meshes into a larger buffers, but which we won't be using in these samples.
+  - Using `firstInstance` this way also works if your instancing data is coming from a vertex buffer with `stepMode: 'instance'`! In that case WebGPU applies the offset for you when fetching the attribute data.
+  - This trick can't be done in WebGL or WebGL 2 as it doesn't have an equivalent to the `firstInstance` argument. It's in development as a [WebGL 2 extension](https://www.khronos.org/registry/webgl/extensions/WEBGL_draw_instanced_base_vertex_base_instance/), though!
+</details><br/>
 
 [![Sample 4 screenshot](/assets/images/sample-04.jpg)
 Click to launch **Sample 04 - Instancing**](04-instancing.html)
 
-If we take a look at our sample app with these new modifications, we can now see that for some models, such as the "flight_helmet", the benefit of these changes is modest: We go from 7 bind group sets to 2, but the number of draw calls is the same because there's no repeated meshes.
+If we take a look at our fourth sample app which applies these new modifications, we can now see that for some models, such as the "flight_helmet", the benefit of these changes is modest: We go from 7 bind group sets to 2, but the number of draw calls is the same because there's no repeated meshes.
 
-For other models, like "sponza", the difference is significant! Wheras previously we were calling `draw()` 124 time, because this model has many repeated elements that share the same mesh, the new version of the code only calls `draw()` 33 times! And the number of bind group sets has gone from 125 to 2. Not bad at all!
+For other models, like "sponza", the difference is significant! Previously we were calling `draw()` 124 times. Because this model has many repeated elements that share the same mesh, however, the new version of the code only calls `draw()` 33 times! And the number of bind group sets has gone from 125 to 2. Not bad at all!
 
-### Knowing when to not pack everything into One Big Buffer
+### Knowing when to _not_ pack everything into One Big Buffer
 
-For our particular case, a simple static glTF renderer, the above strategy of packing all of our transforms into a single buffer works out great. But there are scenarios in which it wouldn't be as beneficial, or possibly even detrimental. Even though we won't be implementing any of those scenarios as part of this document, it's worth considering them for more real-world use cases.
+For our particular case, a simple static glTF renderer, the above strategy of packing all of our transforms into a single buffer works out great. But there are scenarios in which it wouldn't be as beneficial, or possibly even detrimental. Even though we won't be implementing any of them as part of this document, it's worth being aware of for more real-world use cases.
 
-The first thing to consider is if any of the transforms are going to be changing freqeuently. If any parts of the scene are animated you may want to consider placing their transforms in a separate buffer to make per-frame updates easier/faster. Similarly, if you have skinned meshes as part of your scene some of the instancing tricks we just covered may be more difficult to pull off, and having a separate code path for managing and rendering them may be warranted.
+The first thing to consider is if any of the transforms are going to be changing freqeuently. If any parts of the scene are animated you may want to consider placing their transforms in a separate buffer to make per-frame updates easier/faster. Similarly, if you have skinned meshes as part of your scene some of the instancing tricks we just covered may be more difficult to pull off, and having a separate code path for skinning may be warranted.
 
-Another scenario to consider is if the contents of your scene are changing rapidly. If meshes are being added and removed all the time it's not practical to always allocate buffers with exactly the right amount of instance storage, as you'd end up re-allocating and re-populating the buffer almost every frame. A similar problem may emerge when using something like frustum culling, where the meshes in your scene are largely static but which ones you are choosing to render changes frequently. A potentially better approach in those scenarios could be to allocate an instance buffer large enough to handle a reasonable upp limit on the number of meshes you can render at once and update it as needed. Or spread the instance data across several smaller buffers that are cheaper to allocate and destroy as needed.
+Another scenario to consider is if the contents of your scene are changing rapidly. If meshes are being added and removed all the time it's not practical to always allocate buffers with exactly the right amount of instance storage, as you'd end up re-allocating and re-populating the buffer almost every frame. A similar problem may emerge when using something like frustum culling, where the meshes in your scene are largely static but which ones you are choosing to render changes frequently. A potentially better approach in those scenarios could be to allocate an instance buffer large enough to handle a reasonable upper limit on the number of meshes you can render at once and update it as needed. Or spread the instance data across several smaller buffers that are cheaper to allocate and destroy as needed.
 
 Also, if some instanced meshes in your scene have additional per-instance data that doesn't apply to all of them (for example, a per-instance color), then using the `firstInstance` to provide offsets into the instance data buffers becomes trickier. At that point it may be worth either splitting your instance buffers up based on the type of data required for each instance, or finding a different pattern for managing instances altogether.
 
