@@ -438,7 +438,7 @@ With that in mind, let's start looking at techniques that we can use to improve 
 
 ### Handling large attribute offsets
 
-First we should fix a correctness issue that we'll face when loading some models. On the sample page linked above you may have noticed that if you try to load the "buggy" model, you get an error. On Chrome it'll read something like this:
+First we should fix a correctness issue that we'll face when loading some models. On the sample page linked above you may have noticed that if you try to load the "buggy" model, you get an error. On Chrome it reads something like this:
 
 ```
 Attribute offset (41448) with format VertexFormat::Float32x3 (size: 12) doesn't fit in the maximum vertex buffer stride (2048).
@@ -448,9 +448,9 @@ Attribute offset (41448) with format VertexFormat::Float32x3 (size: 12) doesn't 
  - While calling [Device].CreateRenderPipeline([RenderPipelineDescriptor "glTF renderer pipeline"]).
 ```
 
-If you're new to WebGPU that kind of error can be a little intimidating, but it's telling us exactly what we need to know. We tried to create a pipeline where the 1st attribute (`attributes[0]`) of the second buffer (`buffers[1]`) had an offset (41448 bytes) that was invalid.
+If you're new to WebGPU that kind of error can be intimidating, but it's telling us exactly what we need to know. We tried to create a pipeline where the 1st attribute (`attributes[0]`) of the second buffer (`buffers[1]`) had an offset (41448 bytes) that was invalid.
 
-This is because in the code snippet above we're feeding the `accessor.byteOffset` directly into the buffer attribute `offset` when defining the render pipeline. This works well if the attributes begin near the beginning of the buffer view, but WebGPU will reject them if they larger than the `arrayStride` specified for the buffer, and the `arrayStride` can't be larger than than 2048 bytes.
+This is because when we create the render pipeline we're setting the `offset` of each buffer in the vertex state directly from the glTF `accessor.byteOffset`. This works if the `byteOffset` is near the beginning of the `bufferView`, but WebGPU will reject it if the offset is larger than the `arrayStride` for the buffer, or if the `arrayStride` is larger than than 2048 bytes.
 
 For example, assume you have the following accessors:
 
@@ -479,17 +479,17 @@ For example, assume you have the following accessors:
 }]
 ```
 
-You can see that both of these point at the same `bufferView`, but while the first has a `byteOffset` of 0 the second points to a location 5760 byte in! This is because whatever tool produced this file made the decision to place all the attributes in a single buffer, one after the other like this:
+You can see that both of these point at the same `bufferView`, but while the first has a `byteOffset` of 0 the second points to a location 5760 byte in! This is because whatever tool produced this file made the decision to place all the attributes in a single vertex buffer, one after the other like this:
 
 ```
 Position|Position|Position|...|Normal|Normal|Normal|...
 ```
 
-That's a perfectly valid thing to do! And were we writing a WebGL renderer it wouldn't cause us any problems, because `gl.vertexAttribPointer()` doesn't place any limits on the attribute offsets.
+That's a perfectly valid thing to do! And if we were writing a WebGL renderer it wouldn't cause us any problems, because `gl.vertexAttribPointer()` doesn't place any limits on the attribute offsets.
 
-WebGPU, however, has two places where byte offsets into a vertex buffer can be specified: When setting the attribute offsets in a render pipeline, which is limited to the aforementioned `arrayStride`/2048 bytes, and as an optional argument when calling `setVertexBuffer()`, which has no limit. So, the intended way for you to specify an attribute offset is to "normalize" all the attribute offsets for a given buffer so that they the lowest attribute offset is treated as 0, then specify the offset to that attribute when binding the vertex buffer.
+So how do we get around this restriction in WebGPU? Luckily there are two places where byte offsets into a vertex buffer can be specified: When creating a render pipeline (which is limited to the aforementioned `arrayStride`/2048 bytes) and as an optional argument when calling `setVertexBuffer()`, which has _no limit_. The intended way for you to specify attribute offsets is to "normalize" the attribute offsets for a given buffer so that the lowest offset is treated as 0. Then in the render loop you specify the full offset to the that attribute when binding the vertex buffer.
 
-We can implement this for our code above like so:
+We can implement this in our primitive setup code like so:
 
 ```js
 function setupPrimitive(gltf, primitive) {
@@ -509,7 +509,7 @@ function setupPrimitive(gltf, primitive) {
       attributes: [{
         shaderLocation,
         format: gpuFormatForAccessor(accessor),
-        offset: 0,
+        offset: 0, // Explicitly set to zero now.
       }]
     });
 
@@ -532,7 +532,7 @@ function setupPrimitive(gltf, primitive) {
 }
 ```
 
-And, as mentioned above, now that we're tracking buffer offsets along with the buffers we want to bind, we have to make sure that we apply those in the render loop:
+And now that we're tracking the buffer offsets we have to apply those in the render loop:
 
 ```js
 function renderGltf(gltf, renderPass) {
@@ -558,7 +558,7 @@ function renderGltf(gltf, renderPass) {
 }
 ```
 
-With that modification some models that previously were previously failing to render, such as the "buggy" model in the sample above, start showing up! Hooray!
+With that modification some models that previously were previously failing to render, such as the "buggy" and "flight_helmet" models, can render successfully! Hooray!
 
 ### Reduced binding for interleaved buffers
 
@@ -595,9 +595,11 @@ The two `accessors` that both point at a different `byteOffset` into the same `b
 Position|TexCoord|Position|TexCoord|Position|TexCoord...
 ```
 
-This is referred to as "interleaved" vertex data, and just like with the previous section it's a valid choice that the tools which produced the glTF file can make about how to lay out their data.
+This is referred to as "interleaved" vertex data, and just like with the previous example it's a valid choice that the tools which produced the glTF file can make regarding how to lay out the vertex data.
 
-To take advantage of files with this kind of layout and reduce the number of times we need to call `setVertexBuffer()`, we can sort the attributes by the `bufferView` they use as we build the buffer layout. The one thing that we need to be careful of is that if we run into the situation from the previous step, where attributes share a buffer but aren't actually interleaved, we still need to treat those as separate buffers. It adds some complexity, but it's managable:
+To take advantage of files with this kind of layout and reduce the number of times we need to call `setVertexBuffer()`, we can sort the attributes by the `bufferView` they use as we build the buffer layout.
+
+One thing that we need to be careful of is that if we run into the situation from the previous step, where attributes share a buffer but aren't actually interleaved, we still need to treat those as separate buffers. It adds some complexity, but it's managable:
 
 ```js
 function setupPrimitive(gltf, primitive) {
@@ -668,14 +670,14 @@ function setupPrimitive(gltf, primitive) {
 }
 ```
 
-And fortunately for us, this change doesn't require any changes to the render loop. We already did everything necessary in the last step.
+And fortunately for us, this change doesn't require any alterations to the render loop. We already did everything necessary in the last step.
 
 <details markdown=block>
   <summary markdown=span><b>Click here to get pedantic about buffer grouping</b></summary>
   There's an edge case that the above code isn't handling well. Specifically, there's a risk that if a file is mixing both interleaved vertex data AND non-interleaved vertex data that shares a buffer then we may end up not properly identifying the interleaved data depending on order we process the attributes in, and bind the vertex buffers more times than is strictly necessary.
 
   In practice, though, this isn't really an issue. Tools which produce glTF files tend to stick with a single vertex layout pattern for the entire file, so while you may end up seeing non-interleaved shader buffers in one file and interleaved shared buffers in another, it's unlikely that you'll get both in a single file. And if you do it's probably a rare enough edge case that you don't need to spend much time trying to optimize it. The above code will still allow it to render correctly regardless.
-</details>
+</details><br/>
 
 You can see the combined changes from these two steps at work on the second sample page, which now loads every model in the list correctly.
 
@@ -684,21 +686,23 @@ Click to launch **Sample 02 - Buffer Layouts**](02-buffer-layouts.html)
 
 ### More work at load == faster drawing
 
-You may be picking up on a pattern at this point that the setup code is getting more complex, but in return our drawing code can do less work. In this case that comes from looping over fewer vertex buffers, because we're doing the necessary grouping at setup time. This a good pattern, and it reflects the ethos of the WebGPU API as well: Do as much work as possible up front to make the most critical loop, drawing, faster. It's what the majority of this document is focused on.
+With the above changes we're starting to touch on a pattern of the setup code getting more complex in exchange for allowing the drawing code to do less work. In this case that comes from looping over fewer vertex buffers, because we're doing the necessary grouping at setup time. This a good pattern, and it reflects the ethos of the WebGPU API as well: Do as much work as possible up front to make the most critical loop, drawing, faster. It's what the majority of this document is focused on.
 
 So now we've reduced the amount of times we need to call `setVertexBuffer()` to a minimum, which is great! But ultimately that's a pretty minor performance concern compared to the elephant in the room...
 
-### There's too many pipelines!
+## Part 3: Pipeline Caching
 
-It's likely that even with a cursory look at the code above you can start to guess at one of the biggest efficiency issues it faces: _It creates a new pipeline for every single primitive_. That means that if your scene is comprised of 500 glTF `primitives`, even if they all share the same vertex layout, you will still end up with 500 `GPURenderPipelines` to switch between.
+**There's too many pipelines!**
 
-In WebGPU, one of the most important things you can do to improve the efficiency of your rendering is to minimize the number of `GPURenderPipeline` objects you need to switch between. Calls to `setPipeline()` should be treated as expensive, because they generally are! The more times you need to switch between pipelines in the course of rendering your scene, the more state that needs to be pushed to the GPU, and the less you can render overall.
+It's likely that even with a cursory look at the code above you can start to guess at one of the biggest efficiency issues it faces: _It creates a new pipeline for every single primitive_. That means that if your scene is comprised of 500 glTF `primitives` you will end up with 500 `GPURenderPipelines` to switch between, even if they're all identical.
+
+One of the most important things you can do to improve the efficiency of your WebGPU rendering is to minimize the number of `GPURenderPipeline` objects you need to switch between. Calls to `setPipeline()` should be treated as expensive, because they generally are! The more times you need to switch between pipelines in the course of rendering your scene, the more state that needs to be pushed to the GPU, and the less you can render overall.
 
 With that in mind, let's examine ways we can reduce the amount of pipeline switching that happens in our code.
 
 ### Render Pipeline Structure
 
-To start, let's take a closer look at what a `GPURenderPipeline` contains, and how it affects our rendering.
+We'll start by takeing a closer look at what a `GPURenderPipeline` contains, and how it affects our rendering.
 
 You can see what's in the pipeline by looking at the [WebGPU spec's `GPURenderPipelineDescriptor` definition](https://gpuweb.github.io/gpuweb/#dictdef-gpurenderpipelinedescriptor) but given that it's a heavily nested structure it takes a bit of navigation to see the full thing.
 
@@ -785,23 +789,23 @@ You can see what's in the pipeline by looking at the [WebGPU spec's `GPURenderPi
 
 </details><br/>
 
-Most of the time you wont need to specify ALL of that, you can rely on the defaults in many situations or a particular piece of state simply won't apply. But it's still a lot to cram into one object!
+Most of the time you won't need to specify ALL of that. You can oftern rely on defaults or a particular piece of state simply won't apply. But it's still a lot to cram into one object!
 
 ### Where do all those values come from?
 
-First off, there's a lot of values in a Render Pipeline that are informed the **rendering technique** your app is using. Color target formats, multisampling, and depth/stencil settings are all most likely dictated by the structure of your renderer and won't be dependent on any given object's vertex structure or material. This means you can easily control how many pipeline variants result from those particular values, and it's likely to be tightly correlated with how many different types of render passes (color, shadow, post-process, etc) your application uses.
+There's a lot of values in a Render Pipeline that are informed the **rendering technique** your app is using. Color target formats, multisampling, and depth/stencil settings are all most likely dictated by the structure of your renderer and won't be dependent on any given object's vertex structure or material. This means you can easily control how many pipeline variants result from those particular values, and it's likely to be tightly correlated with how many different types of render passes (color, shadow, post-process, etc) your application uses.
 
-Next up are values that are dependent on the **vertex data layout** of your geometry. As we've already seen from the code snippets above, these are values like the number and order of buffers and attributes, their strides, formats, and offsets, and the primitive topology. Every mesh that you render that formats its vertex buffer differently than the others will need it's own variant of a pipeline, even if everything else is the same. For this reason it's best if you can normalize the structure of your vertex data as much as possible, though that may be difficult depending on where your assets come from. We'll talk about this more below. Additionally, if the mesh is animated or has other specialized effects it's likely to need a different variant of the pipeline both for the additional vertex data streams and the animation logic in the shader.
+Next up are values that are dependent on the **vertex data layout** of your geometry. As we've already covered, these are values like the number and order of buffers and attributes, their strides, formats, and offsets, and the primitive topology. Every mesh you render that formats its vertex buffer differently than the others will need it's own variant of a pipeline, even if everything else is the same. For this reason it's best if you can normalize the structure of your vertex data as much as possible, though that may be difficult depending on where your assets come from. Additionally, if the mesh has is animated or has other specialized effects it's likely to need a different variant of the pipeline both for the additional vertex data streams and the animation logic in the shader.
 
 Finally, the remainder of the values are likely to come from your **material**. It's common that a renderer may support multiple different types of materials which require entirely different shaders to achive. For example, a Physically Based Rendering (PBR) surface vs. one that is unaffected by lighting ("fullbright" or "unlit"). But within groups of the same type of material only a few flags should affect the pipeline definition. A material being double sided will determine the cull mode, for example, and materials that are partially transparent will affect the blend modes of the color targets, as well as maybe alpha-to-coverage settings. Generally these should be pretty minimal, though, and the majority of your material information should be captured as texture or buffer data and supplied by a bind group.
 
-It's worth mentioning that the code of the vertex and fragment shader modules sit in a strange place where they can be influenced by all three of those aspects, which can make it seem like another vector for increasing the number of pipelines in use, but you can get away with suprisingly few variants of your shader code itself by relying more on branching and looping, something that GPUs have gotten quite good at over the years. Again, we'll talk about this more below.
+It's worth mentioning that the code of the vertex and fragment shader modules sit in a strange place where they can be influenced by all three of those aspects, which can make it seem like another vector for increasing the number of pipelines in use, but you can get away with suprisingly few variants of your shader code itself by relying more on supplying defaults in bind groups and making use of branching and looping in shaders. Again, we'll talk about this more below.
 
-## Part 3: Identifying duplicate pipelines
+### Identifying duplicate pipelines
 
-Up to this point the render pipelines created by our code have only really taken into account the vertex data layout (buffer layout and primitive topology). So that's where we'll start when looking for duplicate pipelines.
+Up to this point the render pipelines created by our code have only taken into account the vertex data layout (buffer layout and primitive topology). So that's where we'll start when looking for duplicate pipelines.
 
-The way I approach this is with a very simplistic caching mechanism. First, we collect all of the arguments that the pipeline needs in order to render correctly and put them in a "pipeline arguments" object.
+The way I approach this is with a very simplistic caching mechanism. First, we collect all of the arguments that the pipeline needs in order to render correctly and put them in a "pipeline arguments" object. (Be sure to only put what you need to create the pipeline in this object, as every difference will result in a new pipeline!)
 
 ```js
 function getPipelineArgs(primitive, buffers) {
@@ -814,9 +818,11 @@ function getPipelineArgs(primitive, buffers) {
 
 Then those arguments get passed into the method that gets a pipeline for the primitive in question. At that point, in order to determine if we need to create a new pipeline we generate a "key" value that captures every value in our arguments object and check it against a map of previously created pipelines. If the map already contains the key then we know it's a compatible pipeline and we should re-use it!
 
-Now, the way that you generate the pipeline key is up to you, as long as it captures every value that would cause a new pipeline to be required. Given that our pipeline args object already contains that, a really quick and effective way to generate a key is... Just serialize it as a JSON string!
+The way that you generate the pipeline key from the args is up to you, as long as it captures every value. You could implement some fancy hashing if you wanted, but I find that a really quick and effective way to generate the key is... Just serialize it as a JSON string!
 
-Yeah, that feels kinda ugly. But it works! And it ensures that as you add new pipeline arguments in the future for more advanced rendering you don't forget to update your key generation code.
+Yeah, that feels kinda ugly, but it works! And it ensures that as you add new pipeline arguments in the future for more advanced rendering you don't forget to update your key generation code.
+
+Once we have a key, we can build the pipeline cache with a JavaScript `Map`.
 
 ```js
 // Our pipeline cache.
@@ -853,15 +859,15 @@ function getPipelineForPrimitive(args) {
 }
 ```
 
-Nothing about the rest of the code should be too surprising. It's about as simple of a caching mechanism as you can get in JavaScript, and completely ignores more advanced needs like cache invalidation, but it'll do for the purposes of this document.
+Hopefully nothing about that code is too surprising. It's about as simple of a caching mechanism as you can get in JavaScript, and completely ignores more advanced needs like cache invalidation, but it'll do for the purposes of this document.
 
-And now we've significantly reduced the number of pipelines that need to be created! In fact, if you make the above changes to the previous sample page you'll start seeing that most models you load only need a single pipeline now! That'll change when we start taking materials into account, and if we were handling things like animation it could add additional pipeline variations into the mix. But it highlights the fact that although glTF technically doesn't give you many guarantees about vertex layout, the reality is that within a single file the layout is usually going to be identical or extremely similar.
+And now we've significantly reduced the number of pipelines that need to be created! In fact, if you make the above changes to the previous sample page you'll start seeing that many of the models on the sample page only need a one or two pipelines now. (That can change when we start taking materials into account, and if we were handling things like animation it could add additional pipeline variations into the mix.) This highlights the fact that while glTF technically doesn't give you many guarantees about vertex layout, the reality is that within a single file the layout is usually going to be identical or extremely similar.
 
 ### Sorting attributes and buffers
 
-So we found a bunch of geometry that can share the same pipeline, yay! We're done here, right?
+So we've found a bunch of geometry that can share pipelines, yay! But we can actually do even more.
 
-Not quite, actually. If you ever want to display content from multiple files at once then you're in a situation where depending on the version of the tools that created the files, the flags they used, and the tools that initially created the asset in the first place you could end up with a variety of different (but valid) ways to represent effectively the same data. Consider the following two WebGPU buffer layouts for two different meshes loaded from two different files:
+If you ever display content from multiple files at once then you can quickly end up with a variety of different (but valid) ways to represent effectively the same data. Consider the following two WebGPU buffer layouts for two different meshes loaded from two different files:
 
 ```js
 const bufferLayout1 = [{
@@ -910,7 +916,7 @@ If you look carefully you can see that these in fact represent the same buffer l
  - Even though the same buffer layouts are used, the order is different.
  - Similarly, the postion and normal attributes are declared in a different order in the second layout.
 
-So how can we improve that? Well, first off we should recognize that the order of the buffers in the pipeline descriptor _doesn't matter_ as long as at draw time we set the buffers in the corresponding slots. Similarly, the order that attributes are declared in doesn't have any effect on how the vertex data shows up in the shader, as long as the `shaderLocation` stays consistent. So we can increase the number of potential shared pipelines by sorting each buffer's attributes by `shaderLocation`, then sorting the buffers by the `attributes[0].shaderLocation`.
+Fortunately, we can still allow our code to recognize these as the same layout. This is because the order of the buffers in the pipeline descriptor _doesn't matter_ as long as at draw time we set the buffers in the corresponding slots. Similarly, the order that attributes are declared in doesn't have any effect on how the vertex data shows up in the shader as long as the `shaderLocation` stays consistent. So we can increase the number of potential shared pipelines by sorting each buffer's attributes by `shaderLocation`, then sorting the buffers by the `attributes[0].shaderLocation`.
 
 In practice it'll look something like this:
 
@@ -959,11 +965,11 @@ It should be noted that the previous work that we did to normalize attribute off
 
 ### Rethinking the render loop
 
-Now we have most or all of our geometry using a single pipeline, but if we continue using the same render loop from above that actually doesn't help us much, because we're still setting the pipeline for every primitive we draw. If you're lucky the fact that you're simply setting same pipeline over and over again might be recognized by the driver and optimized, but WebGPU implementations have zero obligation to identify duplicate state changes for you. It will always be a far better strategy to optimize your own code to reduce unnecessary work than hope that some other part of the stack will magically make things faster for you.
+We've now dramatically reduced the number of pipelines we're creating. If we continue using the same render loop from above, though, that doesn't help us much. We're still setting the pipeline for every primitive we draw! It's possible that the driver might recognize that we're setting same pipeline repeatedly and try to optimize it away, but WebGPU implementations have zero obligation to identify duplicate state changes for you. It will always be a far better strategy to reduce unecessary work in your own code than to hope that some other part of the stack will magically make things faster for you.
 
-You could do something like keep track of the last pipeline you set and compare it to the next one and then skip the `setPipeline()` call if they're the same, which would work for the samples linked on this page but would be unpredictable in more real-world situations.
+You could do something like keep track of the last pipeline used and compare it to the next one and skip the `setPipeline()` call if they're the same. This may work for the samples linked on this page but would be unpredictable in more real-world situations.
 
-Instead, we can get better, more predictable results by flipping our render loop on it's head. Currently, our render loop looks roughly like this:
+Instead, we can get better, more predictable results by flipping our render loop on it's head. Currently, our render function is structured roughly like this:
 
  * For each node with a mesh
    * Set node transform bind group
@@ -971,7 +977,7 @@ Instead, we can get better, more predictable results by flipping our render loop
      * Set primitive pipeline and buffers
      * Draw primitive
 
-But let's look at the relationship of the objects in that loop. Each Pipeline can be shared between many primitives, and each Primitive/Mesh can be referenced by multiple nodes. So if we want to minimize state changes, we probably want our render loop to look more like this:
+But let's examine the relationship of the objects in that loop. Each Pipeline can be shared between many primitives, and each Primitive/Mesh can be referenced by multiple nodes. So if we want to minimize state changes, we probably want our render loop to look more like this:
 
  * For each pipeline
    * Set pipeline
@@ -981,13 +987,13 @@ But let's look at the relationship of the objects in that loop. Each Pipeline ca
        * Set node transform bind group
        * Draw primitive
 
-That way while the number of times we set the node data stays the same the number of times we set the pipeline and primitive data has the potential to be drastically lower.
+That way while the number of times we set the pipeline has the potential to be drastically lower, the primitive data only needs to be set once per primitive, and the node transform only needs to be set once per node.
 
-### Track your render data carefully.
+### Track your render data carefully
 
-In order to efficiently iterate through our render loop's data in the order prescribed above, we'll want to start tracking it differently. Remember, the more work we do up-front, the less we'll need to do at draw time. In this case that means saving our GPU data in a way that mimics our intended draw order.
+In order to efficiently iterate through the render loop's data in the order prescribed above, we'll want to start tracking it differently. Remember, the more work we do up-front, the less we'll need to do at draw time! In this case that means saving our GPU data in a way that mimics our intended draw order.
 
-First, we used to track a big list of node transforms and meshes. But that's going to be difficult to use if we're trying to look up which transforms to use for a primitive rather than visa-versa. So instead we should start tracking a list of transforms to be applied on every primitive. Let's call those "instances" of the primitive, shall we?
+We originally tracked a big list of node transforms and meshes, but that's going to be difficult to use if we're trying to look up which transforms to use for a primitive rather than visa-versa. So instead we should start tracking a list of transforms to be applied on every primitive. Let's call those "instances" of the primitive.
 
 ```js
 // We don't need this map to persist into the draw loop, so we'll declare it here and pass
@@ -1027,7 +1033,7 @@ function setupMeshNode(gltf, node, primitiveInstances) {
 }
 ```
 
-Also, previously we would store the pipeline to be used for each primitve in that same structure. But now we should start saving a list of primitives with every pipeline, like so:
+Also, we were previously storing the pipeline to be used for each primitve. Instead, we should start saving a list of primitives to be rendered for every pipeline, like so:
 
 ```js
 function getPipelineForPrimitive(args) {
@@ -1044,7 +1050,7 @@ function getPipelineForPrimitive(args) {
 }
 ```
 
-And finally, when it's time to set up the primitives we want to both store the instance list that was created when iterating over the nodes as part of the GPU data that we need, and we want to push this primitive onto the list of primitives for the pipeline it uses.
+When it's time to set up the primitives we want to store the list of instances with the primitve's GPU data, and we want to add this primitive onto the list of primitives for the pipeline it uses.
 
 ```js
 function setupPrimitive(gltf, primitive, primitiveInstances) {
@@ -1066,7 +1072,7 @@ function setupPrimitive(gltf, primitive, primitiveInstances) {
 }
 ```
 
-Now we've finished rearranging our data storage, so we can finally refactor our render loop:
+And finally, now that we've finished rearranging our data storage, so we can refactor our render loop to match:
 
 ```js
 function renderGltf(renderPass) {
@@ -1089,12 +1095,12 @@ function renderGltf(renderPass) {
 }
 ```
 
-You can see that this isn't much less complex than the previous version, we're just looping through it in a different order. But that simple change in the order of operations has a big impact on how much work we're ultimately doing, which hopefully you can see in the third sample page:
+You can see that this isn't much less complex than the previous version. We're just looping through it in a different order. But that simple change in the order of operations has a big impact on how much work we're ultimately doing, which hopefully you can see in the third sample page:
 
 [![Sample 3 screenshot](/assets/images/sample-03.jpg)
 Click to launch **Sample 03 - Pipeline Caching**](03-pipeline-caching.html)
 
-For example, look at the "buggy" model on this page. In the prevous sample, we were calling `setPipeline()` 236 times every frame. With the changes described above we're now calling it once! And we're setting buffers less too, 444 times vs 708 in the previous sample.
+For example, look at the stats for the "buggy" model on this page. In the prevous sample, we were calling `setPipeline()` 236 times every frame. With the changes described above we're now calling it once! And we're setting buffers less too, 444 times vs 708 in the previous sample.
 
 A tradeoff is that we're calling `setBindGroup()` more now (237 times vs 191 in the previous sample), so we've traded off significantly less `setPipeline()` calls for more `setBindGroup()` calls. But that's OK! `setBindGroup()` is generally a cheaper operation AND we can use some additional tricks to reduce those calls too.
 
