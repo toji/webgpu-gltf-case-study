@@ -1780,7 +1780,7 @@ const transparentBlackTexture = createSolidColorTexture(0, 0, 0, 0);
 const defaultNormalTexture = createSolidColorTexture(0.5, 0.5, 1, 1);
 ```
 
-### Part 5.2: Associating materials with primitives
+### Associating materials with primitives
 
 After that's been done make sure to associate the primitive with the bind group we just created during the primitive setup. We can start by adding the material properties to the primitve GPU data we're already tracking.
 
