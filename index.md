@@ -149,8 +149,8 @@ That code snippet is far from optimal, but the point is to show how the glTF dat
   <summary markdown=span><b>Click here if you want to get pedantic about WebGL</b></summary>
   Okay, yes. The code above has a lot of issues but that's not the point of this article! Since you've dug into this section, though, here's some things the above snippet should be doing instead:
 
-   - Attribute locations should be looked up ahead of time and cached, definitely not queried every time we draw!
-   - Better yet, attribute locations should be set as shader program creation time with `gl.bindAttribLocation()` rather than looked up with
+   - Attribute locations should be looked up ahead of time and cached, definitely not queried with `gl.getAttribLocation()` every time we draw!
+   - Better yet, attribute locations should be set at shader program creation time with `gl.bindAttribLocation()`.
    - The code should be using Vertex Array Objects (VAOs), either from WebGL2 or the `OES_vertex_array_object` extension, to define the buffer bindings and vertex attrib pointers once at load time, which drastically reduces the number of calls in the render loop.
    - There's no go reason to keep the original glTF structures around for rendering. The values that are needed for the draw loop, like the primitive mode, draw count, and VAOs should be cached in a form that's easier to iterate through.
    - If all the meshes are using the same shader program it should be set outside of this function.
@@ -427,7 +427,7 @@ function setupMeshNode(gltf, node) {
 
 ### Render loop
 
-Once you've created all the necessary pipelines and bind groups, you can then begin drawing the glTF model in a render loop]. Ours will look something like this:
+Once you've created all the necessary pipelines and bind groups, you can then begin drawing the glTF model in a render loop. Ours will look something like this:
 
 ```js
 function renderGltf(gltf, renderPass) {
