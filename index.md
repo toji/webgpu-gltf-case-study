@@ -40,6 +40,9 @@ If you haven't done any WebGPU development before, these are some great resource
  - [WebGPU — All of the cores, none of the canvas](https://surma.dev/things/webgpu/) - A WebGPU introduction focused on compute
  - The [WebGPU](https://gpuweb.github.io/gpuweb/) and [WGSL](https://gpuweb.github.io/gpuweb/wgsl/) specs - Dense and not fun to read, but a good reference
 
+### TEMPORARY NOTICE ABOUT THE SAMPLES
+<b>The samples on this page were built against the latest version of the WebGPU spec, which is still in flux! As a result, they only run in Chrome Canary (Mac or Windows) at the time of publishing, though it should start working in Chrome Stable within a few weeks, and eventually they'll run on any browser that implements WebGPU!</b>
+
 ## Part 1: A Naive Renderer
 
 Let's start by looking at what it takes to do the most straighforward "get triangles on the screen" renderer we can for a glTF model.
