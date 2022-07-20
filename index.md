@@ -726,6 +726,15 @@ Click to launch **Sample 02 - Buffer Layouts**](02-buffer-layouts.html)
 
 With the above changes we're starting to touch on a pattern of the setup code getting more complex in exchange for allowing the drawing code to do less work. In this case that comes from looping over fewer vertex buffers, because we're doing the necessary grouping at setup time. This a good pattern, and it reflects the ethos of the WebGPU API as well: Do as much work as possible up front to make the most critical loop, drawing, faster. It's what the majority of this document is focused on.
 
+<details markdown=block>
+  <summary markdown=span><b>Extreme vertex layout normalization</b></summary>
+  If we want to take the ethos of "more work at load time, less work at render time" to the extreme, one option you could always turn to is to actually normalize all vertex buffers into a pre-determined layout at load time. For example, you could say that your layout should _always_ consist of an interleaved `POSITION`, `TEXCOORD_0`, `NORMAL`, and `TANGENT`. If you load any data that doesn't fit that layout, you'd copy it into a new buffer (either in JavaScript or, preferrably, in a compute shader) in the layout you'd prefer and render with that instead. Similarly If the model you load doesn't have one of those attributes, you'd generate it.
+
+  This is definitely overkill for any situation where you're just rendering one model, but it may actually be practical if you want to display large scenes that mix many meshes from multiple files. Of course, a **far better** solution would be to pre-process your models in advance to ensure they all match your desired layout anyway, but that's not always an option.
+
+  And no, I'm not going to be implementing any of that as part of this document.
+</details><br/>
+
 So now we've reduced the amount of times we need to call `setVertexBuffer()` to a minimum, which is great! But ultimately that's a pretty minor performance concern compared to the elephant in the room...
 
 ## Part 3: Pipeline Caching
