@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Efficently rendering glTF models
+title: Efficiently rendering glTF models
 subtitle: A WebGPU Case Study
 menubar_toc: true
 ---
@@ -21,7 +21,7 @@ One of the core differences between WebGPU and an API like WebGL, and thus one o
 
 It's a highly effective pattern, but one that can initially feel awkward to work with for developers coming from WebGL, which allowed state to be defined more piecemeal at render time. WebGL's validation was also less strict, allowing wider combinations of state with the expectation that the driver would normalize it into a more GPU-friendly form at runtime. Formats like glTF mirrored some of those patterns in the file structure, and as a result developers may run into complications when implementing a renderer for the format in WebGPU (or, generally, porting any WebGL-based code). It can be easy to fall into patterns that don't effectively use the API when attempting a direct translation between APIs.
 
-In this document, we'll try to illustrate some of those challenges by creating a "naive" glTF renderer with WebGPU. Then we'll progressively refine it to make better use of the API and add more features until we've arrived at a renderer that makes much better, more efficent use of WebGPU's design.
+In this document, we'll try to illustrate some of those challenges by creating a "naive" glTF renderer with WebGPU. Then we'll progressively refine it to make better use of the API and add more features until we've arrived at a renderer that makes much better, more efficient use of WebGPU's design.
 
 Having said that, it's worth keeping in mind that any patterns used to improve rendering efficiency will have upsides and downsides. There's rarely a "perfect" solution for any given problem, only a solution that works well with the tradeoffs your app is able and willing to make. Nothing in this doc should be seen as the definitive Correct Way To Do Things™️. Instead it should be seen as a collection patterns you _can_ apply when working with WebGPU.
 
@@ -29,7 +29,7 @@ Having said that, it's worth keeping in mind that any patterns used to improve r
 
 Despite the fact that we'll be covering ways of rendering glTF models with WebGPU this is _not_ a glTF or WebGPU tutorial. Most of the glTF loading and parsing will be handwaved as "and then a library handles this part", and we're not going to spend any time talking about WebGPU basics like initialization, core API usage, or the shader language.
 
-Instead we'll be focusing on how the data contained in the glTF files maps to various WebGPU concepts, why some of those mappings can initially lead to inefficent use of WebGPU, and strategies for improving it.
+Instead we'll be focusing on how the data contained in the glTF files maps to various WebGPU concepts, why some of those mappings can initially lead to inefficient use of WebGPU, and strategies for improving it.
 
 Ideally you'd want to read through this document after you've _at least_ done a few WebGPU "Hello world" excercises where you've been able to get triangles on the screen, and it would be helpful if you take some time to look over the [glTF 2.0 reference guide](https://www.khronos.org/files/gltf20-reference-guide.pdf) if you're not already familiar with the file format.
 
@@ -49,7 +49,7 @@ Let's start by looking at what it takes to do the most straighforward "get trian
 
 ### A brief primer on glTF meshes
 
-glTF is a popular format for delivering and loading runtime 3D assets, especially because it was designed to work well with web-friendly concepts like [JSON](https://www.json.org/json-en.html) and [ArrayBuffers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer). As mentioned earlier, it was also designed with an eye towards being easy to display with WebGL (or OpenGL ES). It uses enum values from that API to encode certain peices of state, and formats it's data in such a way that it's easy to pass directly to the associated WebGL methods. It's absolutely possible to load glTF assets and display them efficiently with WebGPU (or any othe GPU API for that matter), but this slight bias towards the older API means that the data in the file sometimes needs to be transformed to satisfy WebGPUs expected structure.
+glTF is a popular format for delivering and loading runtime 3D assets, especially because it was designed to work well with web-friendly concepts like [JSON](https://www.json.org/json-en.html) and [ArrayBuffers](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer). As mentioned earlier, it was also designed with an eye towards being easy to display with WebGL (or OpenGL ES). It uses enum values from that API to encode certain pieces of state, and formats it's data in such a way that it's easy to pass directly to the associated WebGL methods. It's absolutely possible to load glTF assets and display them efficiently with WebGPU (or any othe GPU API for that matter), but this slight bias towards the older API means that the data in the file sometimes needs to be transformed to satisfy WebGPUs expected structure.
 
 A perfect example of this is how glTF encodes vertex buffer data. glTF files define `meshes` which each contain a list of chunks of renderable geometry called (confusingly) `primitives`. A `primitive` is represented as a list of named `attributes`, and a `mode` (triangles, lines, or points). Primitives also reference a `material` and possibly `indices`, but let's ignore those for the moment to make things simpler.
 
@@ -116,7 +116,7 @@ Finally, glTF also defines where each `mesh` should be displayed in the scene, d
 
 ### Rendering with WebGL
 
-In WebGL, you would generally expect to upload the data from the `bufferView` pointed at by each of the `primitive.attributes` as a vertex buffer (`gl.ARRAY_BUFFER` in WebGL terms). Then at render time you'd, walk through the `node` tree and for each `primitive` of each `mesh` make a `gl.vertexAttribPointer()` call for each `attribute` with the data from their `accessor`, almost directly:
+In WebGL, you would generally expect to upload the data from the `bufferView` pointed at by each of the `primitive.attributes` as a vertex buffer (`gl.ARRAY_BUFFER` in WebGL terms). Then at render time you'd walk through the `node` tree and for each `primitive` of each `mesh` make a `gl.vertexAttribPointer()` call for each `attribute` with the data from their `accessor`, almost directly:
 
 ```js
 // Simplified WebGL glTF rendering
@@ -155,7 +155,7 @@ That code snippet is far from optimal, but the point is to show how the glTF dat
    - Attribute locations should be looked up ahead of time and cached, definitely not queried with `gl.getAttribLocation()` every time we draw!
    - Better yet, attribute locations should be set at shader program creation time with `gl.bindAttribLocation()`.
    - The code should be using Vertex Array Objects (VAOs), either from WebGL2 or the `OES_vertex_array_object` extension, to define the buffer bindings and vertex attrib pointers once at load time, which drastically reduces the number of calls in the render loop.
-   - There's no go reason to keep the original glTF structures around for rendering. The values that are needed for the draw loop, like the primitive mode, draw count, and VAOs should be cached in a form that's easier to iterate through.
+   - There's no good reason to keep the original glTF structures around for rendering. The values that are needed for the draw loop, like the primitive mode, draw count, and VAOs should be cached in a form that's easier to iterate through.
    - If all the meshes are using the same shader program it should be set outside of this function.
    - If you're using WebGL 2 you should be using uniform buffer objects (UBOs) instead of calling `uniformMatrix4fv()`.
    - I sure hope that `getWorldTransformForNode()` method isn't recalculating the matrix from scratch every frame!
@@ -343,7 +343,7 @@ function getShaderModule() {
         // Always need to at least output something to the position builtin.
         @builtin(position) position : vec4<f32>,
 
-        // The other locations can be anything you want, as long as it's consitent between the
+        // The other locations can be anything you want, as long as it's consistent between the
         // vertex and fragment shaders. Since we're defining both in the same module and using the
         // same structure for the input and output, we get that alignment for free!
         @location(0) normal : vec3<f32>,
@@ -398,7 +398,7 @@ function getShaderModule() {
 
 Next, in order for each of the meshes to be rendered in the correct place, we also need to supply the shader with a matrix to transform them with. This transform comes from the node that the mesh is attached to, and is affected by the transform of every parent node above it in the node tree. (The combined node and node parent transform is commonly known as the "World Transform".)
 
-In WebGL you would most commonly set a uniform by calling `gl.uniformMatrix4fv()` that contains the transform matrix, but in WebGPU uniforms can only come from buffers (similar to WebGL 2's Uniform Buffer Objects.) So a uniform buffer with enough space for the matrix needs to be allocated and populated with the node's transform. Then the buffer is them made visible to the shader via a `GPUBindGroup`.
+In WebGL you would most commonly set a uniform by calling `gl.uniformMatrix4fv()` that contains the transform matrix, but in WebGPU uniforms can only come from buffers (similar to WebGL 2's Uniform Buffer Objects.) So a uniform buffer with enough space for the matrix needs to be allocated and populated with the node's transform. The buffer is then made visible to the shader via a `GPUBindGroup`.
 
 While that is undeniably more complicated than the WebGL approach, at least in terms of load-time setup, it's fortunately still not too bad. For our naive rendering approach we'll create one uniform buffer and bind group for each `node` that has a `mesh`.
 
@@ -434,7 +434,7 @@ Once you've created all the necessary pipelines and bind groups, you can then be
 
 ```js
 function renderGltf(gltf, renderPass) {
-  // Sets uniforms for things like that don't change for the entire frame,
+  // Sets uniforms for things that don't change for the entire frame,
   // like the projection and view matrices.
   renderPass.setBindGroup(0, frameBindGroup);
 
@@ -491,7 +491,7 @@ Attribute offset (41448) with format VertexFormat::Float32x3 (size: 12) doesn't 
 
 If you're new to WebGPU that kind of error can be intimidating, but it's telling us exactly what we need to know. We tried to create a pipeline where the 1st attribute (`attributes[0]`) of the second buffer (`buffers[1]`) had an offset (41448 bytes) that was invalid.
 
-This is because when we create the render pipeline we're setting the `offset` of each buffer in the vertex state directly from the glTF `accessor.byteOffset`. This works if the `byteOffset` is near the beginning of the `bufferView`, but WebGPU will reject it if the offset is larger than the `arrayStride` for the buffer, or if the `arrayStride` is larger than than 2048 bytes.
+This is because when we create the render pipeline we're setting the `offset` of each buffer in the vertex state directly from the glTF `accessor.byteOffset`. This works if the `byteOffset` is near the beginning of the `bufferView`, but WebGPU will reject it if the offset is larger than the `arrayStride` for the buffer, or if the `arrayStride` is larger than 2048 bytes.
 
 For example, assume you have the following accessors:
 
@@ -520,7 +520,7 @@ For example, assume you have the following accessors:
 }]
 ```
 
-You can see that both of these point at the same `bufferView`, but while the first has a `byteOffset` of 0 the second points to a location 5760 byte in! This is because whatever tool produced this file made the decision to place all the attributes in a single vertex buffer, one after the other like this:
+You can see that both of these point at the same `bufferView`, but while the first has a `byteOffset` of 0 the second points to a location 5760 bytes in! This is because whatever tool produced this file made the decision to place all the attributes in a single vertex buffer, one after the other like this:
 
 ```
 Position|Position|Position|...|Normal|Normal|Normal|...
@@ -661,7 +661,7 @@ function setupPrimitive(gltf, primitive) {
     // If the delta between attributes falls outside the bufferView's stated arrayStride,
     // then the buffers should be considered separate.
     let separate = buffer && (Math.abs(accessor.byteOffset - buffer.attributes[0].offset) >= buffer.arrayStride);
-    // If we haven't seen this buffer before OR have decided that is should be separate because its
+    // If we haven't seen this buffer before OR have decided that it should be separate because its
     // offset is too large, create a new buffer entry for the pipeline's vertex layout.
     if (!buffer || separate) {
       buffer = {
@@ -676,19 +676,19 @@ function setupPrimitive(gltf, primitive) {
       // pointing at the same bufferView.
       gpuBuffers.set(buffer, {
         buffer: this.gltf.gpuBuffers[accessor.bufferView],
-        offset: accessor.bufferView
+        offset: accessor.byteOffset
       });
     } else {
       gpuBuffer = gpuBuffers.get(buffer);
       // Track the minimum offset across all attributes that share a buffer.
-      gpuBuffer.offset = Math.min(gpuBuffer.offset, accessor.bufferView);
+      gpuBuffer.offset = Math.min(gpuBuffer.offset, accessor.byteOffset);
     }
 
     // Add the attribute to the buffer layout
     buffer.attributes.push({
       shaderLocation,
       format: gpuFormatForAccessor(accessor),
-      offset: accessor.bufferView,
+      offset: accessor.byteOffset,
     });
 
     drawCount = accessor.count;
@@ -752,7 +752,7 @@ With that in mind, let's examine ways we can reduce the amount of pipeline switc
 
 ### Render Pipeline Structure
 
-We'll start by takeing a closer look at what a `GPURenderPipeline` contains, and how it affects our rendering.
+We'll start by taking a closer look at what a `GPURenderPipeline` contains, and how it affects our rendering.
 
 You can see what's in the pipeline by looking at the [WebGPU spec's `GPURenderPipelineDescriptor` definition](https://gpuweb.github.io/gpuweb/#dictdef-gpurenderpipelinedescriptor) but given that it's a heavily nested structure it takes a bit of navigation to see the full thing.
 
@@ -839,15 +839,15 @@ You can see what's in the pipeline by looking at the [WebGPU spec's `GPURenderPi
 
 </details><br/>
 
-Most of the time you won't need to specify ALL of that. You can oftern rely on defaults or a particular piece of state simply won't apply. But it's still a lot to cram into one object!
+Most of the time you won't need to specify ALL of that. You can often rely on defaults or a particular piece of state simply won't apply. But it's still a lot to cram into one object!
 
 ### Where do all those values come from?
 
-There's a lot of values in a Render Pipeline that are informed the **rendering technique** your app is using. Color target formats, multisampling, and depth/stencil settings are all most likely dictated by the structure of your renderer and won't be dependent on any given object's vertex structure or material. This means you can easily control how many pipeline variants result from those particular values, and it's likely to be tightly correlated with how many different types of render passes (color, shadow, post-process, etc) your application uses.
+There's a lot of values in a Render Pipeline that are informed by the **rendering technique** your app is using. Color target formats, multisampling, and depth/stencil settings are all most likely dictated by the structure of your renderer and won't be dependent on any given object's vertex structure or material. This means you can easily control how many pipeline variants result from those particular values, and it's likely to be tightly correlated with how many different types of render passes (color, shadow, post-process, etc) your application uses.
 
-Next up are values that are dependent on the **vertex data layout** of your geometry. As we've already covered, these are values like the number and order of buffers and attributes, their strides, formats, and offsets, and the primitive topology. Every mesh you render that formats its vertex buffer differently than the others will need it's own variant of a pipeline, even if everything else is the same. For this reason it's best if you can normalize the structure of your vertex data as much as possible, though that may be difficult depending on where your assets come from. Additionally, if the mesh has is animated or has other specialized effects it's likely to need a different variant of the pipeline both for the additional vertex data streams and the animation logic in the shader.
+Next up are values that are dependent on the **vertex data layout** of your geometry. As we've already covered, these are values like the number and order of buffers and attributes, their strides, formats, and offsets, and the primitive topology. Every mesh you render that formats its vertex buffer differently than the others will need it's own variant of a pipeline, even if everything else is the same. For this reason it's best if you can normalize the structure of your vertex data as much as possible, though that may be difficult depending on where your assets come from. Additionally, if the mesh is animated or has other specialized effects it's likely to need a different variant of the pipeline both for the additional vertex data streams and the animation logic in the shader.
 
-Finally, the remainder of the values are likely to come from your **material**. It's common that a renderer may support multiple different types of materials which require entirely different shaders to achive. For example, a Physically Based Rendering (PBR) surface vs. one that is unaffected by lighting ("fullbright" or "unlit"). But within groups of the same type of material only a few flags should affect the pipeline definition. A material being double sided will determine the cull mode, for example, and materials that are partially transparent will affect the blend modes of the color targets, as well as maybe alpha-to-coverage settings. Generally these should be pretty minimal, though, and the majority of your material information should be captured as texture or buffer data and supplied by a bind group.
+Finally, the remainder of the values are likely to come from your **material**. It's common that a renderer may support multiple different types of materials which require entirely different shaders to achieve. For example, a Physically Based Rendering (PBR) surface vs. one that is unaffected by lighting ("fullbright" or "unlit"). But within groups of the same type of material only a few flags should affect the pipeline definition. A material being double sided will determine the cull mode, for example, and materials that are partially transparent will affect the blend modes of the color targets, as well as maybe alpha-to-coverage settings. Generally these should be pretty minimal, though, and the majority of your material information should be captured as texture or buffer data and supplied by a bind group.
 
 It's worth mentioning that the code of the vertex and fragment shader modules sit in a strange place where they can be influenced by all three of those aspects, which can make it seem like another vector for increasing the number of pipelines in use, but you can get away with suprisingly few variants of your shader code itself by relying more on supplying defaults in bind groups and making use of branching and looping in shaders. Again, we'll talk about this more below.
 
@@ -1043,7 +1043,7 @@ That way while the number of times we set the pipeline has the potential to be d
 
 In order to efficiently iterate through the render loop's data in the order prescribed above, we'll want to start tracking it differently. Remember, the more work we do up-front, the less we'll need to do at draw time! In this case that means saving our GPU data in a way that mimics our intended draw order.
 
-We originally tracked a big list of node transforms and meshes, but that's going to be difficult to use if we're trying to look up which transforms to use for a primitive rather than visa-versa. So instead we should start tracking a list of transforms to be applied on every primitive. Let's call those "instances" of the primitive.
+We originally tracked a big list of node transforms and meshes, but that's going to be difficult to use if we're trying to look up which transforms to use for a primitive rather than vice-versa. So instead we should start tracking a list of transforms to be applied on every primitive. Let's call those "instances" of the primitive.
 
 ```js
 // We don't need this map to persist into the draw loop, so we'll declare it here and pass
@@ -1199,7 +1199,7 @@ In contrast, arrays into uniform buffers are required to have a fixed number of 
 
 ### Gathering transforms
 
-After we make the above changes we still need to do some work to pack our transform data differently before we can render more than once instance at a time.
+After we make the above changes we still need to do some work to pack our transform data differently before we can render more than one instance at a time.
 
 To do this, we're going to change up the `setupMeshNodes` function to no longer create bind groups, and instead just start collecting the transforms associated with each primitive.
 
@@ -1223,7 +1223,7 @@ We still _need_ the bind groups, of course! For the moment we can create them at
 
 ```js
 function setupPrimitiveInstances(primitive, primitiveInstances) {
-  // Get the list of instance transform matricies for this primitive.
+  // Get the list of instance transform matrices for this primitive.
   const instances = primitiveInstances.get(primitive);
 
   const count = instances.length;
@@ -1357,7 +1357,7 @@ It's worth noting that it's important to make sure that all the matrices for a s
 
 ```js
 function setupPrimitiveInstances(primitive, primitiveInstances) {
-  // Get the list of instance transform matricies for this primitive.
+  // Get the list of instance transform matrices for this primitive.
   const instances = primitiveInstances.matrices.get(primitive);
 
   const first = primitiveInstances.offset;
@@ -1450,7 +1450,7 @@ For other models, like "sponza", the difference is significant! Previously we we
 
 For our particular case, a simple static glTF renderer, the above strategy of packing all of our transforms into a single buffer works out great. But there are scenarios in which it wouldn't be as beneficial, or possibly even detrimental. Even though we won't be implementing any of them as part of this document, it's worth being aware of for more real-world use cases.
 
-The first thing to consider is if any of the transforms are going to be changing freqeuently. If any parts of the scene are animated you may want to consider placing their transforms in a separate buffer to make per-frame updates easier/faster. Similarly, if you have skinned meshes as part of your scene some of the instancing tricks we just covered may be more difficult to pull off, and having a separate code path for skinning may be warranted.
+The first thing to consider is if any of the transforms are going to be changing frequently. If any parts of the scene are animated you may want to consider placing their transforms in a separate buffer to make per-frame updates easier/faster. Similarly, if you have skinned meshes as part of your scene some of the instancing tricks we just covered may be more difficult to pull off, and having a separate code path for skinning may be warranted.
 
 Another scenario to consider is if the contents of your scene are changing rapidly. If meshes are being added and removed all the time it's not practical to always allocate buffers with exactly the right amount of instance storage, as you'd end up re-allocating and re-populating the buffer almost every frame. A similar problem may emerge when using something like frustum culling, where the meshes in your scene are largely static but which ones you are choosing to render changes frequently. A potentially better approach in those scenarios could be to allocate an instance buffer large enough to handle a reasonable upper limit on the number of meshes you can render at once and update it as needed. Or spread the instance data across several smaller buffers that are cheaper to allocate and destroy as needed.
 
@@ -1680,7 +1680,7 @@ That's the entirity of the changes we need to make to the pipelines to support t
 
   Traditionally the way to handle this is to render all opaque surfaces first, then render all transparent surfaces sorted back-to-front from the camera's point of view. This still isn't perfect, though, as you could have very large transparent meshes that don't sort trivially.
 
-  There's also newer methods for [order-independent transparancy](https://en.wikipedia.org/wiki/Order-independent_transparency) that typically involve storing data about transparent surfaces in intermediate render targets and resolving them in the correct order as a post process. These can achive good results but are more expense in terms of both rendering and memory usage and typically not favored for performance sensitive applications like games, especially on mobile GPUs.
+  There's also newer methods for [order-independent transparancy](https://en.wikipedia.org/wiki/Order-independent_transparency) that typically involve storing data about transparent surfaces in intermediate render targets and resolving them in the correct order as a post process. These can achieve good results but are more expense in terms of both rendering and memory usage and typically not favored for performance sensitive applications like games, especially on mobile GPUs.
 
   This document's approach to correct transparency rendering is to stick its fingers in its ears and loudly shout _"LA LA LA! CAN'T HEAR YOU!"_ while carefully picking models that don't exhibit the problem.
 </details>
@@ -2290,9 +2290,9 @@ Another reason for preprocessing is that you can pick data patterns that work be
 
 Good tooling can also reduce the size of your files. While they're not covered here I use the [Draco](https://google.github.io/draco/) and [Basis](https://github.com/BinomialLLC/basis_universal) compression glTF-transform provides in my other projects to great effect, allowing me to deliver much smaller files than I would have been able to otherwise.
 
-Finally, some hand editing of meshes can be great for performance. For example, the "sponza" scene used throughout these samples actually isn't the one from the Khronos samples repository! It's an [optimized version](https://github.com/toji/sponza-optimized) of the mesh that I edited by hand in Blender in order to make better use of instancing (which also happened to make it a smaller download.) This was time consuming, but if you happen to be working with an artist who's creating models for your project some communication about which techniques work best for rendering efficency up front can go a long way. (In "sponza" this mostly came down the a difference in using linked duplicates instead of full mesh copies for repeated elements.)
+Finally, some hand editing of meshes can be great for performance. For example, the "sponza" scene used throughout these samples actually isn't the one from the Khronos samples repository! It's an [optimized version](https://github.com/toji/sponza-optimized) of the mesh that I edited by hand in Blender in order to make better use of instancing (which also happened to make it a smaller download.) This was time consuming, but if you happen to be working with an artist who's creating models for your project some communication about which techniques work best for rendering efficiency up front can go a long way. (In "sponza" this mostly came down to the difference in using linked duplicates instead of full mesh copies for repeated elements.)
 
-Of course, not everyone has the luxury of being able to preprocess their assets before they're loaded. Some usecases, such as the [&lt;model-viewer&gt;](https://modelviewer.dev/) web component, need to be able to load pretty much any assets that they're given from any source. Fortunately, while some models may be less ideal than others, the patterns we've gone through in this document should work well in most any situation.
+Of course, not everyone has the luxury of being able to preprocess their assets before they're loaded. Some usecases, such as the [&lt;model-viewer&gt;](https://modelviewer.dev/) web component, need to be able to load pretty much any assets that they're given from any source. Fortunately, while some models may be less ideal than others, the patterns we've gone through in this document should work well in almost any situation.
 
 ## That's a wrap!
 
