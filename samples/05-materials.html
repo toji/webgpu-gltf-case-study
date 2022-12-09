@@ -226,7 +226,10 @@
         setupMaterial(gltf, material, materialGpuData) {
           // Create a uniform buffer for this material and populate it with the material properties.
           const materialUniformBuffer = this.device.createBuffer({
-            size: 5 * Float32Array.BYTES_PER_ELEMENT,
+            // Even though the struct in the shader only uses 5 floats, WebGPU requires buffer
+            // bindings to be padded to multiples of 16 bytes, so we're going to allocate a bit
+            // extra.
+            size: 8 * Float32Array.BYTES_PER_ELEMENT,
             usage: GPUBufferUsage.UNIFORM,
             mappedAtCreation: true,
           });

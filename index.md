@@ -1713,9 +1713,11 @@ For each material we need to populate a uniform buffer with the material's scala
 function setupMaterial(gltf, material, materialGpuData) {
   // Create a uniform buffer for this material and populate it with the material properties.
   // For these samples we're only doing partial material support, so we only need room for
-  // 5 floats. (4 for baseColorFactor and 1 for alphaCutoff)
+  // 5 floats. (4 for baseColorFactor and 1 for alphaCutoff). However, WebGPU requires that buffer
+  // bindings be padded to a multiple of 16 bytes, so we'll allocate slightly more than we need to
+  // satisfy that requirement.
   const materialUniformBuffer = device.createBuffer({
-    size: 5 * Float32Array.BYTES_PER_ELEMENT,
+    size: 8 * Float32Array.BYTES_PER_ELEMENT,
     usage: GPUBufferUsage.UNIFORM,
     mappedAtCreation: true,
   });
