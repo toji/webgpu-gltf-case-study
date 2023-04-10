@@ -69,49 +69,49 @@
           if (!this.shaderModule) {
             const code = `
               struct Camera {
-                projection : mat4x4<f32>,
-                view : mat4x4<f32>,
-                position : vec3<f32>,
+                projection : mat4x4f,
+                view : mat4x4f,
+                position : vec3f,
                 time : f32,
               };
               @group(0) @binding(0) var<uniform> camera : Camera;
 
-              @group(1) @binding(0) var<uniform> model : mat4x4<f32>;
+              @group(1) @binding(0) var<uniform> model : mat4x4f;
 
               struct VertexInput {
-                @location(${ShaderLocations.POSITION}) position : vec3<f32>,
-                @location(${ShaderLocations.NORMAL}) normal : vec3<f32>,
+                @location(${ShaderLocations.POSITION}) position : vec3f,
+                @location(${ShaderLocations.NORMAL}) normal : vec3f,
               };
 
               struct VertexOutput {
-                @builtin(position) position : vec4<f32>,
-                @location(0) normal : vec3<f32>,
+                @builtin(position) position : vec4f,
+                @location(0) normal : vec3f,
               };
 
               @vertex
               fn vertexMain(input : VertexInput) -> VertexOutput {
                 var output : VertexOutput;
 
-                output.position = camera.projection * camera.view * model * vec4(input.position, 1.0);
-                output.normal = normalize((camera.view * model * vec4(input.normal, 0.0)).xyz);
+                output.position = camera.projection * camera.view * model * vec4f(input.position, 1);
+                output.normal = normalize((camera.view * model * vec4f(input.normal, 0)).xyz);
 
                 return output;
               }
 
               // Some hardcoded lighting
-              const lightDir = vec3(0.25, 0.5, 1.0);
-              const lightColor = vec3(1.0, 1.0, 1.0);
-              const ambientColor = vec3(0.1, 0.1, 0.1);
+              const lightDir = vec3f(0.25, 0.5, 1);
+              const lightColor = vec3f(1);
+              const ambientColor = vec3f(0.1);
 
               @fragment
-              fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
+              fn fragmentMain(input : VertexOutput) -> @location(0) vec4f {
                 // An extremely simple directional lighting model, just to give our model some shape.
                 let N = normalize(input.normal);
                 let L = normalize(lightDir);
                 let NDotL = max(dot(N, L), 0.0);
                 let surfaceColor = ambientColor + NDotL;
 
-                return vec4(surfaceColor, 1.0);
+                return vec4f(surfaceColor, 1);
               }
             `;
 

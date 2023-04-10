@@ -324,29 +324,29 @@ function getShaderModule() {
     const code = `
       // These are being managed in the demo base code.
       struct Camera {
-        projection : mat4x4<f32>,
-        view : mat4x4<f32>,
+        projection : mat4x4f,
+        view : mat4x4f,
       };
       @group(0) @binding(0) var<uniform> camera : Camera;
 
       // This comes from the bind groups being created in setupMeshNode in the next section.
-      @group(1) @binding(0) var<uniform> model : mat4x4<f32>;
+      @group(1) @binding(0) var<uniform> model : mat4x4f;
 
       // These locations correspond with the values in the ShaderLocations struct in our JS and, by
       // extension, the buffer attributes in the pipeline vertex state.
       struct VertexInput {
-        @location(${ShaderLocations.POSITION}) position : vec3<f32>,
-        @location(${ShaderLocations.NORMAL}) normal : vec3<f32>,
+        @location(${ShaderLocations.POSITION}) position : vec3f,
+        @location(${ShaderLocations.NORMAL}) normal : vec3f,
       };
 
       struct VertexOutput {
         // Always need to at least output something to the position builtin.
-        @builtin(position) position : vec4<f32>,
+        @builtin(position) position : vec4f,
 
         // The other locations can be anything you want, as long as it's consistent between the
         // vertex and fragment shaders. Since we're defining both in the same module and using the
         // same structure for the input and output, we get that alignment for free!
-        @location(0) normal : vec3<f32>,
+        @location(0) normal : vec3f,
       };
 
       @vertex
@@ -355,23 +355,23 @@ function getShaderModule() {
         var output : VertexOutput;
 
         // Transform the vertex position by the model/view/projection matrices.
-        output.position = camera.projection * camera.view * model * vec4(input.position, 1.0);
+        output.position = camera.projection * camera.view * model * vec4f(input.position, 1);
 
         // Transform the normal by the model and view matrices. Normally you'd just do model matrix,
         // but adding the view matrix in this case is a hack to always keep the normals pointing
         // towards the light, so that we can clearly see the geometry even as we rotate it.
-        output.normal = normalize((camera.view * model * vec4(input.normal, 0.0)).xyz);
+        output.normal = normalize((camera.view * model * vec4f(input.normal, 0)).xyz);
 
         return output;
       }
 
       // Some hardcoded lighting constants.
-      const lightDir = vec3(0.25, 0.5, 1.0);
-      const lightColor = vec3(1.0, 1.0, 1.0);
-      const ambientColor = vec3(0.1, 0.1, 0.1);
+      const lightDir = vec3f(0.25, 0.5, 1);
+      const lightColor = vec3f(1);
+      const ambientColor = vec3f(0.1);
 
       @fragment
-      fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
+      fn fragmentMain(input : VertexOutput) -> @location(0) vec4f {
         // An extremely simple directional lighting model, just to give our model some shape.
         let N = normalize(input.normal);
         let L = normalize(lightDir);
@@ -381,7 +381,7 @@ function getShaderModule() {
         let surfaceColor = ambientColor + NDotL;
 
         // No transparency at this point.
-        return vec4(surfaceColor, 1.0);
+        return vec4f(surfaceColor, 1);
       }
     `;
 
@@ -1167,24 +1167,24 @@ When drawing instanced geometry, you need to provide something that communicates
 The concept is pretty simple. Previously in the vertex shader we were using a uniform buffer to communicate the model matrix for every draw call, as shown in this simplified shader:
 
 ```rust
-@group(1) @binding(0) var<uniform> modelMatrix : mat4x4<f32>;
+@group(1) @binding(0) var<uniform> modelMatrix : mat4x4f;
 
 @vertex
-fn vertexMain(@location(0) position : vec3<f32>) -> @builtin(position) vec4<f32> {
+fn vertexMain(@location(0) position : vec3f) -> @builtin(position) vec4f {
   // Omitting things like applying the view and projection transforms for simplicity.
-  return modelMatrix * vec4(position, 1.0);
+  return modelMatrix * vec4f(position, 1);
 }
 ```
 
 All we need to do to take advantage of instancing is change that `modelMatrix` uniform from a single matrix into an array of them, then use the [WGSL builtin `instance_index` value](https://www.w3.org/TR/WGSL/#builtin-values) to index into it.
 
 ```rust
-@group(1) @binding(0) var<storage> modelMatrices : array<mat4x4<f32>>;
+@group(1) @binding(0) var<storage> modelMatrices : array<mat4x4f>;
 
 @vertex
-fn vertexMain(@location(0) position : vec3<f32>,
-              @builtin(instance_index) instance : u32) -> @builtin(position) vec4<f32> {
-  return modelMatrices[instance] * vec4(position, 1.0);
+fn vertexMain(@location(0) position : vec3f,
+              @builtin(instance_index) instance : u32) -> @builtin(position) vec4f {
+  return modelMatrices[instance] * vec4f(position, 1);
 }
 ```
 
@@ -1855,7 +1855,7 @@ A minimal example of using the base color factor may look like this:
 
 // Material struct mirrors how the data is packed in setupMaterial()
 struct Material {
-  baseColorFactor : vec4<f32>,
+  baseColorFactor : vec4f,
   alphaCutoff: f32,
 };
 // Group is the index specified set when calling setBindGroup(), binding is the
@@ -1863,16 +1863,16 @@ struct Material {
 @group(2) @binding(0) var<uniform> material : Material;
 
 struct VertexOutput {
-  @location(0) normal : vec3<f32>
+  @location(0) normal : vec3f
 };
 
 // Some hardcoded lighting
-const lightDir = vec3(0.25, 0.5, 1.0);
-const lightColor = vec3(1.0, 1.0, 1.0);
-const ambientColor = vec3(0.1, 0.1, 0.1);
+const lightDir = vec3f(0.25, 0.5, 1);
+const lightColor = vec3f(1);
+const ambientColor = vec3f(0.1);
 
 @fragment
-fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
+fn fragmentMain(input : VertexOutput) -> @location(0) vec4f {
   // Get the material's color value (stored as a variable to improve readability).
   let baseColor = material.baseColorFactor;
 
@@ -1884,7 +1884,7 @@ fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
   let surfaceColor = (baseColor.rgb * ambientColor) + (baseColor.rgb * NDotL);
 
   // Use the base color alpha as well.
-  return vec4(surfaceColor, baseColor.a);
+  return vec4f(surfaceColor, baseColor.a);
 }
 ```
 
@@ -1924,19 +1924,19 @@ Then the texture coordinate attribute can be accessed in the vertex shader and p
 
 struct VertexInput {
   @builtin(instance_index) instance : u32,
-  @location(${ShaderLocations.POSITION}) position : vec3<f32>,
-  @location(${ShaderLocations.NORMAL}) normal : vec3<f32>,
+  @location(${ShaderLocations.POSITION}) position : vec3f,
+  @location(${ShaderLocations.NORMAL}) normal : vec3f,
 
   // Newly added texcoord attribute.
-  @location(${ShaderLocations.TEXCOORD_0}) texcoord : vec2<f32>,
+  @location(${ShaderLocations.TEXCOORD_0}) texcoord : vec2f,
 };
 
 struct VertexOutput {
-  @builtin(position) position : vec4<f32>,
-  @location(0) normal : vec3<f32>,
+  @builtin(position) position : vec4f,
+  @location(0) normal : vec3f,
 
   // Texcoord needs to be passed to the fragment shader as well.
-  @location(1) texcoord : vec2<f32>,
+  @location(1) texcoord : vec2f,
 };
 
 @vertex
@@ -1944,8 +1944,8 @@ fn vertexMain(input : VertexInput) -> VertexOutput {
   var output : VertexOutput;
 
   let modelMatrix = model[input.instance];
-  output.position = camera.projection * camera.view * modelMatrix * vec4(input.position, 1.0);
-  output.normal = normalize((camera.view * modelMatrix * vec4(input.normal, 0.0)).xyz);
+  output.position = camera.projection * camera.view * modelMatrix * vec4f(input.position, 1);
+  output.normal = normalize((camera.view * modelMatrix * vec4f(input.normal, 0)).xyz);
 
   // Copy the texcoord to the fragment shader without change.
   output.texcoord = input.texcoord;
@@ -1961,7 +1961,7 @@ Which in turn allows the fragment shader to sample from the `baseColorTexture` c
 @group(2) @binding(2) var baseColorTexture : texture_2d<f32>;
 
 @fragment
-fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
+fn fragmentMain(input : VertexOutput) -> @location(0) vec4f {
   // Get the combined base color from the texture and baseColorFactor.
   let baseColor = textureSample(baseColorTexture, materialSampler, input.texcoord) * material.baseColorFactor;
 
@@ -2044,7 +2044,7 @@ function getPipelineForPrimitive(args) {
 
 ### Composing shader variants
 
-How do we actually put those arguments to use when building the shader? In this case, we need to either add or omit the `@location() texcoord : vec2<f32>` from the vertex inputs depending on the value of `args.hasTexcoord`.
+How do we actually put those arguments to use when building the shader? In this case, we need to either add or omit the `@location() texcoord : vec2f` from the vertex inputs depending on the value of `args.hasTexcoord`.
 
 If you are coming to WebGPU from WebGL, you might be familiar with using GLSL preprocessor statements to conditionally switch code on and off. Unfortunately if you go looking for a similar mechanism in WGSL you'll be dissapointed to learn that it has none.
 
@@ -2054,12 +2054,12 @@ Instead you have to rely on JavaScript's string manipulation mechanisms to get b
 let code = `
   struct VertexInput {
     @builtin(instance_index) instance : u32,
-    @location(${ShaderLocations.POSITION}) position : vec3<f32>,
-    @location(${ShaderLocations.NORMAL}) normal : vec3<f32>,
+    @location(${ShaderLocations.POSITION}) position : vec3f,
+    @location(${ShaderLocations.NORMAL}) normal : vec3f,
 `;
 
 if (args.hasTexcoord) {
-  code += `@location(${ShaderLocations.TEXCOORD_0}) texcoord : vec2<f32>,`;
+  code += `@location(${ShaderLocations.TEXCOORD_0}) texcoord : vec2f,`;
 }
 
 code += `
@@ -2078,10 +2078,10 @@ import { wgsl } from 'https://cdn.jsdelivr.net/npm/wgsl-preprocessor@1.0/wgsl-pr
 let code = wgsl`
   struct VertexInput {
     @builtin(instance_index) instance : u32,
-    @location(${ShaderLocations.POSITION}) position : vec3<f32>,
-    @location(${ShaderLocations.NORMAL}) normal : vec3<f32>,
+    @location(${ShaderLocations.POSITION}) position : vec3f,
+    @location(${ShaderLocations.NORMAL}) normal : vec3f,
     #if ${args.hasTexcoord}
-      @location(${ShaderLocations.TEXCOORD_0}) texcoord : vec2<f32>,
+      @location(${ShaderLocations.TEXCOORD_0}) texcoord : vec2f,
     #endif
   };
 `;
@@ -2097,10 +2097,10 @@ let code = wgsl`
 
   struct VertexInput {
     @builtin(instance_index) instance : u32,
-    @location(${ShaderLocations.POSITION}) position : vec3<f32>,
-    @location(${ShaderLocations.NORMAL}) normal : vec3<f32>,
+    @location(${ShaderLocations.POSITION}) position : vec3f,
+    @location(${ShaderLocations.NORMAL}) normal : vec3f,
     #if ${args.hasTexcoord}
-      @location(${ShaderLocations.TEXCOORD_0}) texcoord : vec2<f32>,
+      @location(${ShaderLocations.TEXCOORD_0}) texcoord : vec2f,
     #endif
   };
 
@@ -2109,14 +2109,14 @@ let code = wgsl`
     var output : VertexOutput;
 
     let modelMatrix = model[input.instance];
-    output.position = camera.projection * camera.view * modelMatrix * vec4(input.position, 1.0);
-    output.normal = normalize((camera.view * modelMatrix * vec4(input.normal, 0.0)).xyz);
+    output.position = camera.projection * camera.view * modelMatrix * vec4f(input.position, 1);
+    output.normal = normalize((camera.view * modelMatrix * vec4f(input.normal, 0)).xyz);
 
     #if ${args.hasTexcoord}
       output.texcoord = input.texcoord;
     #else
       // Use a default texcoord if an appropriate attribute is not provided.
-      output.texcoord = vec2(0.0);
+      output.texcoord = vec2f(0);
     #endif
 
     return output;
@@ -2135,7 +2135,7 @@ We're already passing the `alphaCutoff` into the shader as a uniform, but we onl
 ```js
 let code = wgsl`
   @fragment
-  fn fragmentMain(input : VertexOutput) -> @location(0) vec4<f32> {
+  fn fragmentMain(input : VertexOutput) -> @location(0) vec4f {
     let baseColor = textureSample(baseColorTexture, materialSampler, input.texcoord) * material.baseColorFactor;
 
     #if ${args.useAlphaCutoff}
