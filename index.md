@@ -33,15 +33,18 @@ Instead we'll be focusing on how the data contained in the glTF files maps to va
 
 Ideally you'd want to read through this document after you've _at least_ done a few WebGPU "Hello world" excercises where you've been able to get triangles on the screen, and it would be helpful if you take some time to look over the [glTF 2.0 reference guide](https://www.khronos.org/files/gltf20-reference-guide.pdf) if you're not already familiar with the file format.
 
-If you haven't done any WebGPU development before, these are some great resources to start with!
+If you're looking for a walkthrough of the basics of loading and display a glTF model with WebGPU, Will Usher has put together an excellent series of blog posts titled ["From 0 to glTF with WebGPU"](https://www.willusher.io/graphics/2023/04/10/0-to-gltf-triangle) on exactly that subject. They focus on getting geometry on screen and not necessarily the most efficient way to do that, though, which makes them a great companion piece to this article.
+
+Some other great resources to start with if you haven't done any WebGPU development before are:
 
  - [WebGPU Samples](https://austin-eng.com/webgpu-samples/)
  - [Raw WebGPU](https://alain.xyz/blog/raw-webgpu) - A WebGPU rendering overview/tutorial
+ - [WebGPU Fundamentals](https://webgpufundamentals.org/) - Details walkthroughs with great visualizations
  - [WebGPU — All of the cores, none of the canvas](https://surma.dev/things/webgpu/) - A WebGPU introduction focused on compute
  - The [WebGPU](https://gpuweb.github.io/gpuweb/) and [WGSL](https://gpuweb.github.io/gpuweb/wgsl/) specs - Dense and not fun to read, but a good reference
 
-### TEMPORARY NOTICE ABOUT THE SAMPLES
-<b>The samples on this page were built against the latest version of the WebGPU spec, which is still in flux! As a result, they only run in Chrome Canary (Mac or Windows) at the time of publishing, though it should start working in Chrome Stable within a few weeks, and eventually they'll run on any browser that implements WebGPU!</b>
+### WebGPU Compatibility
+At the time of the latest update to this article WebGPU has shipped in Chromium-based browsers (Google Chrome, Microsoft Edge, etc) on Mac or Windows, and the samples accompanying this page have been confirmed to work on them. It is expected that they'll eventually run on any browser that implements WebGPU on all OSes, it simply takes time for a large feature like this to propegate through the web ecosystem.
 
 ## Part 1: A Naive Renderer
 
