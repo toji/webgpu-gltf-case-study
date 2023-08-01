@@ -2,6 +2,7 @@
 layout: page
 title: Efficiently rendering glTF models
 subtitle: Live Samples
+show_sidebar: false
 menubar: navigation
 ---
 
