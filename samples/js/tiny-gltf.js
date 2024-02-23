@@ -95,6 +95,9 @@ function setWorldMatrix(gltf, node, parentWorldMatrix) {
   }
 
   mat4.multiply(node.worldMatrix, parentWorldMatrix, node.worldMatrix);
+  node.normalMatrix = mat4.create();
+  mat4.invert(node.normalMatrix, node.worldMatrix);
+  mat4.transpose(node.normalMatrix, node.normalMatrix);
 
   // If the node has a mesh, get the AABB for that mesh and transform it to get the node's AABB.
   if ('mesh' in node) {

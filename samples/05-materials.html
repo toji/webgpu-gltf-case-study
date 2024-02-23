@@ -54,6 +54,10 @@
               binding: 0, // Node uniforms
               visibility: GPUShaderStage.VERTEX,
               buffer: { type: 'read-only-storage' },
+            },{
+              binding: 1,
+              visibility: GPUShaderStage.VERTEX,
+              buffer: { type: 'read-only-storage' },
             }],
           });
 
@@ -104,13 +108,19 @@
           }
 
           // Create a buffer large enough to contain all the instance matrices for the entire scene.
-          const instanceBuffer = this.device.createBuffer({
+          const modelMatricesBuffer = this.device.createBuffer({
             size: 16 * Float32Array.BYTES_PER_ELEMENT * primitiveInstances.total,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             mappedAtCreation: true,
           });
+          primitiveInstances.modelMatricesBuffer = new Float32Array(modelMatricesBuffer.getMappedRange());
 
-          primitiveInstances.arrayBuffer = new Float32Array(instanceBuffer.getMappedRange());
+          const normalMatricesBuffer = this.device.createBuffer({
+            size: 16 * Float32Array.BYTES_PER_ELEMENT * primitiveInstances.total,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            mappedAtCreation: true,
+          });
+          primitiveInstances.normalMatricesBuffer = new Float32Array(normalMatricesBuffer.getMappedRange());
 
           for (const mesh of gltf.meshes) {
             for (const primitive of mesh.primitives) {
@@ -118,14 +128,18 @@
             }
           }
 
-          instanceBuffer.unmap();
+          modelMatricesBuffer.unmap();
+          normalMatricesBuffer.unmap();
 
           this.instanceBindGroup = this.device.createBindGroup({
             label: `glTF Instance BindGroup`,
             layout: this.instanceBindGroupLayout,
             entries: [{
               binding: 0, // Instance storage buffer
-              resource: { buffer: instanceBuffer },
+              resource: { buffer: modelMatricesBuffer },
+            },{
+              binding: 1, // Instance storage buffer
+              resource: { buffer: normalMatricesBuffer },
             }],
           });
         }
@@ -145,6 +159,7 @@
               @group(0) @binding(0) var<uniform> camera : Camera;
 
               @group(1) @binding(0) var<storage> model : array<mat4x4f>;
+              @group(1) @binding(1) var<storage> normalMatrices : array<mat4x4f>;
 
               struct Material {
                 baseColorFactor : vec4f,
@@ -176,7 +191,8 @@
 
                 let modelMatrix = model[input.instance];
                 output.position = camera.projection * camera.view * modelMatrix * vec4f(input.position, 1);
-                output.normal = normalize((camera.view * modelMatrix * vec4f(input.normal, 0)).xyz);
+                let normalMatrix = normalMatrices[input.instance];
+                output.normal = normalize((normalMatrix * vec4f(input.normal, 0)).xyz);
 
                 #if ${args.hasTexcoord}
                   output.texcoord = input.texcoord;
@@ -271,10 +287,11 @@
           for (const primitive of mesh.primitives) {
             let instances = primitiveInstances.matrices.get(primitive);
             if (!instances) {
-              instances = [];
+              instances = { modelMatrices:[], normalMatrices: [] };
               primitiveInstances.matrices.set(primitive, instances);
             }
-            instances.push(node.worldMatrix);
+            instances.modelMatrices.push(node.worldMatrix);
+            instances.normalMatrices.push(node.normalMatrix);
           }
           primitiveInstances.total += mesh.primitives.length;
         }
@@ -283,10 +300,11 @@
           const instances = primitiveInstances.matrices.get(primitive);
 
           const first = primitiveInstances.offset;
-          const count = instances.length;
+          const count = instances.modelMatrices.length;
 
           for (let i = 0; i < count; ++i) {
-            primitiveInstances.arrayBuffer.set(instances[i], (first + i) * 16);
+            primitiveInstances.modelMatricesBuffer.set(instances.modelMatrices[i], (first + i) * 16);
+            primitiveInstances.normalMatricesBuffer.set(instances.normalMatrices[i], (first + i) * 16);
           }
 
           primitiveInstances.offset += count;

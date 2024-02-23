@@ -41,6 +41,10 @@
               binding: 0, // Node uniforms
               visibility: GPUShaderStage.VERTEX,
               buffer: {},
+            },{
+              binding: 1, // Node uniforms
+              visibility: GPUShaderStage.VERTEX,
+              buffer: {},
             }],
           });
 
@@ -77,6 +81,7 @@
               @group(0) @binding(0) var<uniform> camera : Camera;
 
               @group(1) @binding(0) var<uniform> model : mat4x4f;
+              @group(1) @binding(1) var<uniform> normalMatrix: mat4x4f;
 
               struct VertexInput {
                 @location(${ShaderLocations.POSITION}) position : vec3f,
@@ -93,7 +98,7 @@
                 var output : VertexOutput;
 
                 output.position = camera.projection * camera.view * model * vec4f(input.position, 1);
-                output.normal = normalize((camera.view * model * vec4f(input.normal, 0)).xyz);
+                output.normal = normalize((normalMatrix * vec4f(input.normal, 0)).xyz);
 
                 return output;
               }
@@ -131,12 +136,21 @@
           });
           this.device.queue.writeBuffer(nodeUniformBuffer, 0, node.worldMatrix);
 
+          const normalMatrixBuffer = this.device.createBuffer({
+            size: 16 * Float32Array.BYTES_PER_ELEMENT,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+          });
+          this.device.queue.writeBuffer(normalMatrixBuffer, 0, node.normalMatrix);
+
           const bindGroup = this.device.createBindGroup({
             label: `glTF Node BindGroup`,
             layout: this.nodeBindGroupLayout,
             entries: [{
               binding: 0, // Node uniforms
               resource: { buffer: nodeUniformBuffer },
+            },{
+              binding: 1,
+              resource: { buffer: normalMatrixBuffer }
             }],
           });
 
