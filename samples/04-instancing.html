@@ -65,7 +65,7 @@
 
           // Create a buffer large enough to contain all the instance matrices for the entire scene.
           const instanceBuffer = this.device.createBuffer({
-            size: 16 * Float32Array.BYTES_PER_ELEMENT * primitiveInstances.total,
+            size: 32 * Float32Array.BYTES_PER_ELEMENT * primitiveInstances.total,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             mappedAtCreation: true,
           });
@@ -104,7 +104,11 @@
               };
               @group(0) @binding(0) var<uniform> camera : Camera;
 
-              @group(1) @binding(0) var<storage> model : array<mat4x4f>;
+              struct Model {
+                matrix: mat4x4f,
+                normalMat: mat4x4f,
+              }
+              @group(1) @binding(0) var<storage> instances : array<Model>;
 
               struct VertexInput {
                 @builtin(instance_index) instance : u32,
@@ -121,9 +125,9 @@
               fn vertexMain(input : VertexInput) -> VertexOutput {
                 var output : VertexOutput;
 
-                let modelMatrix = model[input.instance];
-                output.position = camera.projection * camera.view * modelMatrix * vec4f(input.position, 1);
-                output.normal = normalize((camera.view * modelMatrix * vec4f(input.normal, 0)).xyz);
+                let model = instances[input.instance];
+                output.position = camera.projection * camera.view * model.matrix * vec4f(input.position, 1);
+                output.normal = (camera.view * model.normalMat * vec4f(input.normal, 0)).xyz;
 
                 return output;
               }
@@ -162,7 +166,7 @@
               instances = [];
               primitiveInstances.matrices.set(primitive, instances);
             }
-            instances.push(node.worldMatrix);
+            instances.push(node);
           }
           // Make sure to add the number of matrices used for this mesh to the total.
           primitiveInstances.total += mesh.primitives.length;
@@ -177,7 +181,8 @@
 
           // Place the matrices in the instances buffer at the given offset.
           for (let i = 0; i < count; ++i) {
-            primitiveInstances.arrayBuffer.set(instances[i], (first + i) * 16);
+            primitiveInstances.arrayBuffer.set(instances[i].worldMatrix, (first + i) * 32);
+            primitiveInstances.arrayBuffer.set(instances[i].normalMatrix, (first + i) * 32 + 16);
           }
 
           // Update the offset for the next primitive.

@@ -96,6 +96,13 @@ function setWorldMatrix(gltf, node, parentWorldMatrix) {
 
   mat4.multiply(node.worldMatrix, parentWorldMatrix, node.worldMatrix);
 
+  // Calculate the normal matrix
+  node.normalMatrix = mat4.clone(node.worldMatrix);
+  node.normalMatrix[12] = 0;
+  node.normalMatrix[13] = 0;
+  node.normalMatrix[14] = 0;
+  mat4.transpose(node.normalMatrix, mat4.invert(node.normalMatrix, node.normalMatrix));
+
   // If the node has a mesh, get the AABB for that mesh and transform it to get the node's AABB.
   if ('mesh' in node) {
     const mesh = gltf.meshes[node.mesh];
